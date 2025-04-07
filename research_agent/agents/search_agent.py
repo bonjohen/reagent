@@ -4,6 +4,9 @@ import logging
 from agents import Agent, WebSearchTool
 from agents.model_settings import ModelSettings
 
+# Define the model to use
+SEARCH_MODEL = "gpt-3.5-turbo"  # Using GPT-3.5-turbo for compatibility
+
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -27,21 +30,28 @@ class EnhancedWebSearchTool(WebSearchTool):
     async def _run(self, query: str) -> str:
         """Run the web search with error handling."""
         try:
-            logger.info(f"Performing web search for: {query}")
+            logger.info(f"[{SEARCH_MODEL}] Performing web search for: {query}")
+
+            # Log detailed information about the search attempt
+            logger.info(f"[{SEARCH_MODEL}] WebSearchTool configuration: {self.__dict__}")
+
             result = await super()._run(query)
             if not result or result.strip() == "":
-                logger.warning(f"Empty result for query: {query}")
+                logger.warning(f"[{SEARCH_MODEL}] Empty result for query: {query}")
                 return "No results found for this query. Please try a different search term."
             return result
         except Exception as e:
             error_msg = f"Error performing web search: {str(e)}"
-            logger.error(error_msg)
+            logger.error(f"[{SEARCH_MODEL}] {error_msg}")
+            logger.error(f"[{SEARCH_MODEL}] Exception type: {type(e).__name__}")
+            logger.error(f"[{SEARCH_MODEL}] Exception details: {repr(e)}")
             return error_msg
 
 # Create the search agent
 search_agent = Agent(
     name="Search agent",
     instructions=INSTRUCTIONS,
+    model=SEARCH_MODEL,  # Using the defined model
     tools=[EnhancedWebSearchTool()],  # Using our enhanced web search tool
     model_settings=ModelSettings(tool_choice="required"),  # Always use the search tool
 )

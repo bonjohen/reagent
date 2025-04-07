@@ -4,6 +4,9 @@ import re
 
 from agents import Agent
 
+# Define the model to use
+PLANNER_MODEL = "gpt-3.5-turbo"  # Using GPT-3.5-turbo for compatibility
+
 # Instructions for the planner agent
 PROMPT = (
     "You are a helpful research assistant. Given a query, come up with a set of web searches "
@@ -119,7 +122,5 @@ class WebSearchPlan(BaseModel):
 planner_agent = Agent(
     name="PlannerAgent",
     instructions=PROMPT,
-    model="gpt-3.5-turbo",  # Using GPT-3.5-turbo for compatibility
-    # Fallback models in case the primary model is unavailable
-    fallback_models=["gpt-3.5-turbo-16k", "gpt-3.5-turbo-0125"]
+    model=PLANNER_MODEL
 )

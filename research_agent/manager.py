@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Optional
+import os
+from typing import Optional, Union
 
 from rich.console import Console
 
@@ -10,10 +11,19 @@ from agents import Runner, custom_span, gen_trace_id, trace
 
 from research_agent.agents.planner_agent import WebSearchItem, WebSearchPlan, planner_agent
 from research_agent.agents.search_agent import search_agent
-from research_agent.agents.writer_agent import ReportData, writer_agent
+from research_agent.agents.writer_agent_improved import ReportData, writer_agent
 from research_agent.printer import Printer
 from research_agent.error_utils import format_error
 from research_agent.persistence import ResearchPersistence
+
+# Import custom search tools
+try:
+    from research_agent.tools.search_tools import get_search_tool
+    custom_search_tool = get_search_tool()
+    print(f"Using custom search tool: {custom_search_tool.__class__.__name__ if custom_search_tool else 'None'}")
+except ImportError:
+    print("Custom search tools not available, falling back to default search")
+    custom_search_tool = None
 
 class ResearchManager:
     """
@@ -49,6 +59,8 @@ class ResearchManager:
                     hide_checkmark=True,
                 )
 
+                # No demo mode
+
                 self.printer.update_item(
                     "starting",
                     "Starting research...",
@@ -78,7 +90,7 @@ class ResearchManager:
                                     is_done=True,
                                 )
                             else:
-                                # If no search plan in session, create a new one
+                                # Create a new search plan
                                 search_plan = await self._plan_searches(query)
                         else:
                             # Invalid session, create a new search plan
@@ -98,10 +110,13 @@ class ResearchManager:
                             is_done=True,
                         )
                 except Exception as e:
-                    error_msg = format_error(e, "planning searches")
+                    # Sanitize error message to avoid exposing sensitive information
+                    error_type = type(e).__name__
+                    sanitized_error = f"A {error_type} occurred during search planning"
+
                     self.printer.update_item(
                         "error",
-                        f"Error planning searches: {error_msg}",
+                        f"Error planning searches: {sanitized_error}",
                         is_done=True,
                     )
                     return
@@ -133,10 +148,13 @@ class ResearchManager:
                             is_done=True,
                         )
                 except Exception as e:
-                    error_msg = format_error(e, "performing searches")
+                    # Sanitize error message to avoid exposing sensitive information
+                    error_type = type(e).__name__
+                    sanitized_error = f"A {error_type} occurred while performing searches"
+
                     self.printer.update_item(
                         "error",
-                        f"Error performing searches: {error_msg}",
+                        f"Error performing searches: {sanitized_error}",
                         is_done=True,
                     )
                     return
@@ -162,10 +180,13 @@ class ResearchManager:
                         if self.session_id:
                             self.persistence.save_report(self.session_id, report.model_dump())
                 except Exception as e:
-                    error_msg = format_error(e, "writing report")
+                    # Sanitize error message to avoid exposing sensitive information
+                    error_type = type(e).__name__
+                    sanitized_error = f"A {error_type} occurred while writing the report"
+
                     self.printer.update_item(
                         "error",
-                        f"Error writing report: {error_msg}",
+                        f"Error writing report: {sanitized_error}",
                         is_done=True,
                     )
                     return
@@ -207,23 +228,39 @@ class ResearchManager:
         Returns:
             A plan containing search queries and their rationale
         """
-        self.printer.update_item("planning", "Planning searches...")
+        # Get the model being used
+        model_name = planner_agent.model
 
-        result = await Runner.run(
-            planner_agent,
-            f"Query: {query}",
-        )
+        self.printer.update_item("planning", f"Planning searches using {model_name}...")
 
-        # Parse the response to get the search plan
-        search_plan = WebSearchPlan.from_response(str(result.final_output))
+        try:
+            result = await Runner.run(
+                planner_agent,
+                f"Query: {query}",
+            )
 
-        self.printer.update_item(
-            "planning",
-            f"Will perform {len(search_plan.searches)} searches",
-            is_done=True,
-        )
+            # Parse the response to get the search plan
+            search_plan = WebSearchPlan.from_response(str(result.final_output))
 
-        return search_plan
+            self.printer.update_item(
+                "planning",
+                f"Will perform {len(search_plan.searches)} searches",
+                is_done=True,
+            )
+
+            return search_plan
+        except Exception as e:
+            # Sanitize error message to avoid exposing sensitive information
+            error_type = type(e).__name__
+            sanitized_error = f"A {error_type} occurred during planning"
+
+            self.printer.update_item(
+                "error",
+                f"Error planning searches [{model_name}]: {sanitized_error}",
+                is_done=True,
+            )
+            print(f"[{model_name}] Planning error: {error_type}")
+            raise e
 
     async def _perform_searches(self, search_plan: WebSearchPlan) -> list[str]:
         """
@@ -238,6 +275,7 @@ class ResearchManager:
         with custom_span("Search the web"):
             self.printer.update_item("searching", "Searching...")
 
+            # Regular search process with API calls
             # Rate limiting configuration
             max_concurrent_searches = 3  # Maximum number of concurrent searches
             delay_between_searches = 1.0  # Delay in seconds between starting searches
@@ -351,7 +389,34 @@ class ResearchManager:
             # Set a timeout for the search operation
             timeout_seconds = 60  # 1 minute timeout per search
 
-            # Create a task for the search
+            # Try using custom search tools first if available
+            if custom_search_tool:
+                try:
+                    # Use our custom search tool
+                    print(f"Using custom search tool for query: {item.query}")
+                    search_task = asyncio.create_task(custom_search_tool.search(item.query))
+
+                    # Wait for the task to complete with a timeout
+                    result = await asyncio.wait_for(search_task, timeout=timeout_seconds)
+
+                    # Limit the size of the search result to prevent memory issues
+                    max_result_length = 5000  # Limit to 5000 characters
+                    if len(result) > max_result_length:
+                        truncated_result = result[:max_result_length] + "\n\n[Result truncated due to excessive length]"
+                        self.printer.update_item(
+                            "warning",
+                            f"Search result for '{item.query}' truncated due to excessive length",
+                            is_done=True,
+                        )
+                        return truncated_result
+
+                    return result
+                except Exception as e:
+                    # If custom search fails, log the error and fall back to default search
+                    print(f"Custom search failed: {str(e)}. Falling back to default search.")
+
+            # Fall back to default search agent if custom search is not available or failed
+            print(f"Using default search agent for query: {item.query}")
             search_task = asyncio.create_task(Runner.run(
                 search_agent,
                 input,
@@ -384,14 +449,18 @@ class ResearchManager:
                 print(f"Search timeout for '{item.query}' after {timeout_seconds} seconds")
                 return f"[Search for '{item.query}' timed out after {timeout_seconds} seconds]"
         except Exception as e:
+            # Sanitize error message to avoid exposing sensitive information
+            error_type = type(e).__name__
+            sanitized_error = f"A {error_type} occurred during search"
+
             self.printer.update_item(
                 "error",
-                f"Error searching for '{item.query}': {str(e)}",
+                f"Error searching for '{item.query}': {sanitized_error}",
                 is_done=True,
             )
-            # Log the error for debugging
-            print(f"Search error for '{item.query}': {str(e)}")
-            return f"[Error searching for '{item.query}': {str(e)}]"
+            # Log the error for debugging (but don't include in user-facing output)
+            print(f"Search error for '{item.query}': {error_type}")
+            return f"[Error searching for '{item.query}': {sanitized_error}]"
 
     async def _write_report(self, query: str, search_results: list[str]) -> ReportData:
         """
@@ -406,31 +475,59 @@ class ResearchManager:
         """
         self.printer.update_item("writing", "Thinking about report...")
 
+        # Regular report generation with API calls
         input = f"Original query: {query}\nSummarized search results: {search_results}"
 
         # Set a timeout for the report generation
         timeout_seconds = 300  # 5 minutes timeout for report generation
 
         try:
-            # Create a task for the report generation
-            # The Runner.run_streamed method returns a coroutine that resolves to a RunResultStreaming object
-            # We need to await it to get the actual RunResultStreaming object
-            result = await Runner.run_streamed(
+            # Get the model being used
+            model_name = writer_agent.model
+
+            print(f"\n[DEBUG] [{model_name}] Starting report generation...")
+            print(f"[DEBUG] [{model_name}] Input type: {type(input)}")
+            print(f"[DEBUG] [{model_name}] Input length: {len(input)}")
+            print(f"[DEBUG] [{model_name}] Query: {query[:100]}..." if len(query) > 100 else f"[DEBUG] [{model_name}] Query: {query}")
+            print(f"[DEBUG] [{model_name}] Search results count: {len(search_results)}")
+
+            # The Runner.run_streamed method returns a RunResultStreaming object directly, not a coroutine
+            # We should NOT await it as it's not awaitable
+            print(f"[DEBUG] [{model_name}] Calling Runner.run_streamed...")
+            result = Runner.run_streamed(
                 writer_agent,
                 input,
             )
+            print(f"[DEBUG] [{model_name}] Runner.run_streamed called successfully")
 
             # Set up a timeout for the report generation
             start_time = time.time()
         except TimeoutError as e:
             raise e
         except Exception as e:
+            # Get the model being used
+            model_name = writer_agent.model
+
+            # Detailed error logging
+            error_type = type(e).__name__
+            print(f"\n[DEBUG] [{model_name}] Error in report generation: {error_type}")
+            print(f"[DEBUG] [{model_name}] Error message: {str(e)}")
+            print(f"[DEBUG] [{model_name}] Error details: {repr(e)}")
+
+            # Print stack trace for debugging
+            import traceback
+            print(f"[DEBUG] [{model_name}] Stack trace:")
+            traceback.print_exc()
+
+            # Sanitize error message for user display
+            sanitized_error = f"A {error_type} occurred during report generation"
+
             self.printer.update_item(
                 "error",
-                f"Error generating report: {str(e)}",
+                f"Error generating report [{model_name}]: {sanitized_error}",
                 is_done=True,
             )
-            print(f"Report generation error: {str(e)}")
+            print(f"[{model_name}] Report generation error: {error_type}")
             raise e
 
         # Show progress updates while the report is being generated
@@ -446,7 +543,6 @@ class ResearchManager:
 
         last_update = time.time()
         next_message = 0
-        timeout_seconds = 300  # 5 minutes timeout
 
         try:
             # Process the stream events with timeout handling
@@ -468,17 +564,40 @@ class ResearchManager:
                     next_message += 1
                     last_update = current_time
 
+            # Get the model being used
+            model_name = writer_agent.model
+
             # If we get here, the stream completed successfully
             self.printer.mark_item_done("writing")
+
+            # Log the final output for debugging
+            print(f"\n[DEBUG] [{model_name}] Stream completed successfully")
+            print(f"[DEBUG] [{model_name}] Final output type: {type(result.final_output)}")
+            final_output_str = str(result.final_output)
+            print(f"[DEBUG] [{model_name}] Final output length: {len(final_output_str)}")
+            print(f"[DEBUG] [{model_name}] Final output preview: {final_output_str[:200]}..." if len(final_output_str) > 200 else f"[DEBUG] [{model_name}] Final output: {final_output_str}")
+
             # Parse the response using our custom method
-            return ReportData.from_response(str(result.final_output))
+            print(f"[DEBUG] [{model_name}] Calling ReportData.from_response...")
+            try:
+                report_data = ReportData.from_response(final_output_str, model_name)
+                print(f"[DEBUG] [{model_name}] ReportData.from_response completed successfully")
+                return report_data
+            except Exception as e:
+                print(f"[DEBUG] [{model_name}] Error in ReportData.from_response: {type(e).__name__}")
+                print(f"[DEBUG] [{model_name}] Error message: {str(e)}")
+                raise
         except TimeoutError as e:
             raise e
         except Exception as e:
+            # Sanitize error message to avoid exposing sensitive information
+            error_type = type(e).__name__
+            sanitized_error = f"A {error_type} occurred while processing the report"
+
             self.printer.update_item(
                 "error",
-                f"Error processing report stream: {str(e)}",
+                f"Error processing report stream: {sanitized_error}",
                 is_done=True,
             )
-            print(f"Error processing report stream: {str(e)}")
+            print(f"Error processing report stream: {error_type}")
             raise e
