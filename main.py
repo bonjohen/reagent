@@ -17,10 +17,21 @@ if not api_key:
     print("Please set it in a .env file or in your environment.")
     exit(1)
 
-# Basic validation of API key format
-if not api_key.startswith("sk-") or len(api_key) < 20:
-    print("Warning: OPENAI_API_KEY appears to be in an invalid format.")
-    print("API keys typically start with 'sk-' and are at least 20 characters long.")
+# Enhanced validation of API key format
+def is_valid_api_key(key: str) -> bool:
+    """Validate the format of an OpenAI API key."""
+    # Check basic format (starts with 'sk-' and has sufficient length)
+    if not key.startswith("sk-") or len(key) < 40:
+        return False
+
+    # Check that it only contains valid characters
+    valid_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
+    return all(c in valid_chars for c in key[3:])  # Skip the 'sk-' prefix
+
+if not is_valid_api_key(api_key):
+    print("Error: OPENAI_API_KEY appears to be in an invalid format.")
+    print("API keys typically start with 'sk-' and are 51 characters long.")
+    print("They contain only letters, numbers, hyphens, and underscores.")
     response = input("Do you want to continue anyway? (y/n): ")
     if response.lower() != 'y':
         exit(1)
@@ -81,6 +92,16 @@ async def main() -> None:
         # Validate input
         if not query or query.strip() == "":
             print("Error: Please provide a non-empty research query.")
+            return
+
+        # Check for very short or likely invalid queries
+        if len(query.strip()) < 5:
+            print("Error: Query is too short. Please provide a more detailed research query.")
+            return
+
+        # Check for queries that are just punctuation or special characters
+        if all(not c.isalnum() for c in query.strip()):
+            print("Error: Query must contain at least one letter or number.")
             return
 
         query = query.strip()

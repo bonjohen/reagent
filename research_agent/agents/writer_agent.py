@@ -59,14 +59,64 @@ class ReportData(BaseModel):
             json_str = re.sub(r'\\n', '\n', json_str)  # Replace \n with actual newlines
 
             # Parse the JSON
-            data = json.loads(json_str)
+            try:
+                data = json.loads(json_str)
+            except json.JSONDecodeError as json_err:
+                # Try to fix common JSON formatting issues
+                fixed_json_str = cls._attempt_json_repair(json_str)
+                data = json.loads(fixed_json_str)
+
+            # Validate required fields
+            required_fields = ['short_summary', 'markdown_report', 'follow_up_questions']
+            for field in required_fields:
+                if field not in data:
+                    raise ValueError(f"Missing required field: {field}")
+
+            # Validate field types
+            if not isinstance(data['short_summary'], str):
+                raise ValueError("'short_summary' must be a string")
+            if not isinstance(data['markdown_report'], str):
+                raise ValueError("'markdown_report' must be a string")
+            if not isinstance(data['follow_up_questions'], list):
+                raise ValueError("'follow_up_questions' must be a list")
+
+            # Ensure follow_up_questions contains only strings
+            if not all(isinstance(q, str) for q in data['follow_up_questions']):
+                raise ValueError("All items in 'follow_up_questions' must be strings")
+
             return cls.model_validate(data)
         except Exception as e:
-            raise ValueError(f"Failed to parse response as JSON: {str(e)}\nResponse: {response}")
+            # Create a fallback report if parsing fails
+            fallback_data = {
+                'short_summary': f"Error parsing report: {str(e)}",
+                'markdown_report': f"# Error in Report Generation\n\nThere was an error parsing the report data: {str(e)}\n\nRaw response:\n\n{response}",
+                'follow_up_questions': ["What went wrong with the report generation?", "How can the report format be improved?"]
+            }
+            print(f"Error parsing report JSON: {str(e)}\nFalling back to error report.")
+            return cls.model_validate(fallback_data)
 
-# Create the writer agent
+    @staticmethod
+    def _attempt_json_repair(json_str: str) -> str:
+        """Attempt to repair common JSON formatting issues."""
+        # Replace single quotes with double quotes (common mistake)
+        repaired = re.sub(r"'([^']*)'\s*:", r'"\1":', json_str)
+
+        # Fix unquoted keys
+        repaired = re.sub(r"([{,])\s*(\w+)\s*:", r'\1"\2":', repaired)
+
+        # Fix trailing commas in arrays/objects
+        repaired = re.sub(r',\s*([\]}])', r'\1', repaired)
+
+        # Fix missing quotes around string values
+        repaired = re.sub(r':\s*([^\s\d"\'{\[\]}][^,\]}]*)', r':"\1"', repaired)
+
+        return repaired
+
+# Create the writer agent with a valid model name
 writer_agent = Agent(
     name="WriterAgent",
     instructions=PROMPT,
     model="gpt-3.5-turbo",  # Using GPT-3.5-turbo for compatibility
+    # Fallback models in case the primary model is unavailable
+    fallback_models=["gpt-3.5-turbo-16k", "gpt-3.5-turbo-0125"]
 )

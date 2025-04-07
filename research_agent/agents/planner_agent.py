@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 import json
+import re
 
 from agents import Agent
 
@@ -51,14 +52,74 @@ class WebSearchPlan(BaseModel):
                 json_str = response.strip()
 
             # Parse the JSON
-            data = json.loads(json_str)
+            try:
+                data = json.loads(json_str)
+            except json.JSONDecodeError:
+                # Try to fix common JSON formatting issues
+                fixed_json_str = cls._attempt_json_repair(json_str)
+                data = json.loads(fixed_json_str)
+
+            # Validate required fields
+            if 'searches' not in data:
+                raise ValueError("Missing required field: 'searches'")
+
+            # Validate that searches is a list
+            if not isinstance(data['searches'], list):
+                raise ValueError("'searches' must be a list")
+
+            # Validate each search item
+            for i, item in enumerate(data['searches']):
+                if not isinstance(item, dict):
+                    raise ValueError(f"Search item {i} must be an object")
+                if 'query' not in item:
+                    raise ValueError(f"Search item {i} missing required field: 'query'")
+                if 'reason' not in item:
+                    raise ValueError(f"Search item {i} missing required field: 'reason'")
+                if not isinstance(item['query'], str):
+                    raise ValueError(f"Search item {i}: 'query' must be a string")
+                if not isinstance(item['reason'], str):
+                    raise ValueError(f"Search item {i}: 'reason' must be a string")
+
             return cls.model_validate(data)
         except Exception as e:
-            raise ValueError(f"Failed to parse response as JSON: {str(e)}\nResponse: {response}")
+            # Create a fallback plan if parsing fails
+            fallback_data = {
+                'searches': [
+                    {
+                        'query': 'error in search plan generation',
+                        'reason': f"Error parsing search plan: {str(e)}"
+                    },
+                    {
+                        'query': 'basic research methodology',
+                        'reason': 'Fallback search to provide some useful information'
+                    }
+                ]
+            }
+            print(f"Error parsing search plan JSON: {str(e)}\nFalling back to basic search plan.")
+            return cls.model_validate(fallback_data)
 
-# Create the planner agent
+    @staticmethod
+    def _attempt_json_repair(json_str: str) -> str:
+        """Attempt to repair common JSON formatting issues."""
+        # Replace single quotes with double quotes (common mistake)
+        repaired = re.sub(r"'([^']*)'\s*:", r'"\1":', json_str)
+
+        # Fix unquoted keys
+        repaired = re.sub(r"([{,])\s*(\w+)\s*:", r'\1"\2":', repaired)
+
+        # Fix trailing commas in arrays/objects
+        repaired = re.sub(r',\s*([\]}])', r'\1', repaired)
+
+        # Fix missing quotes around string values
+        repaired = re.sub(r':\s*([^\s\d"\'{\[\]}][^,\]}]*)', r':"\1"', repaired)
+
+        return repaired
+
+# Create the planner agent with a valid model name
 planner_agent = Agent(
     name="PlannerAgent",
     instructions=PROMPT,
     model="gpt-3.5-turbo",  # Using GPT-3.5-turbo for compatibility
+    # Fallback models in case the primary model is unavailable
+    fallback_models=["gpt-3.5-turbo-16k", "gpt-3.5-turbo-0125"]
 )

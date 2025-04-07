@@ -22,9 +22,20 @@ class Printer:
         """Support for context manager protocol."""
         return self
 
-    def __exit__(self, *_):
-        """Ensure resources are cleaned up when used as a context manager."""
-        self.end()
+    def __exit__(self, exc_type=None, exc_val=None, exc_tb=None):
+        """Ensure resources are cleaned up when used as a context manager.
+
+        Args:
+            exc_type: Exception type if an exception was raised in the context
+            exc_val: Exception value if an exception was raised in the context
+            exc_tb: Exception traceback if an exception was raised in the context
+        """
+        try:
+            self.end()
+        except Exception as e:
+            # Log the error but don't suppress the original exception
+            print(f"Error cleaning up printer resources: {str(e)}")
+        return False  # Don't suppress exceptions
 
     def update_item(self, key: str, text: str, is_done: bool = False, hide_checkmark: bool = False) -> None:
         """
@@ -62,7 +73,10 @@ class Printer:
             except Exception as e:
                 print(f"Error stopping live display: {str(e)}")
             finally:
+                # Mark as not running even if stop() fails
                 self._is_running = False
+                # Clear references to help garbage collection
+                self.items = {}
 
     def _make_panel(self) -> Panel:
         """

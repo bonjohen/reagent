@@ -241,32 +241,82 @@ class ResearchManager:
             # Rate limiting configuration
             max_concurrent_searches = 3  # Maximum number of concurrent searches
             delay_between_searches = 1.0  # Delay in seconds between starting searches
+            search_timeout = 60.0  # Timeout for each individual search in seconds
+            overall_timeout = 300.0  # Overall timeout for all searches in seconds
 
             # Create a semaphore to limit concurrent searches
             semaphore = asyncio.Semaphore(max_concurrent_searches)
 
             async def rate_limited_search(item: WebSearchItem) -> str | None:
-                """Execute a search with rate limiting."""
+                """Execute a search with rate limiting and timeout."""
                 async with semaphore:  # Limit concurrent searches
                     # Add a small delay to prevent API rate limits
                     await asyncio.sleep(delay_between_searches)
-                    return await self._search(item)
+                    try:
+                        # Apply timeout to individual search
+                        return await asyncio.wait_for(self._search(item), timeout=search_timeout)
+                    except asyncio.TimeoutError:
+                        self.printer.update_item(
+                            "warning",
+                            f"Search for '{item.query}' timed out after {search_timeout} seconds",
+                            is_done=True,
+                        )
+                        return f"[Search for '{item.query}' timed out after {search_timeout} seconds]"
 
             num_completed = 0
             tasks = [asyncio.create_task(rate_limited_search(item)) for item in search_plan.searches]
             results = []
 
-            for task in asyncio.as_completed(tasks):
-                result = await task
-                if result is not None:
-                    results.append(result)
+            # Set an overall timeout for all searches
+            start_time = time.time()
 
-                num_completed += 1
+            try:
+                for task in asyncio.as_completed(tasks):
+                    # Check if overall timeout has been reached
+                    if time.time() - start_time > overall_timeout:
+                        self.printer.update_item(
+                            "warning",
+                            f"Overall search process timed out after {overall_timeout} seconds. Some searches may not have completed.",
+                            is_done=True,
+                        )
+                        # Cancel remaining tasks
+                        for t in tasks:
+                            if not t.done():
+                                t.cancel()
+                        break
+
+                    try:
+                        result = await task
+                        if result is not None:
+                            results.append(result)
+                    except asyncio.CancelledError:
+                        # Task was cancelled, just skip it
+                        pass
+                    except Exception as e:
+                        self.printer.update_item(
+                            "error",
+                            f"Error in search task: {str(e)}",
+                            is_done=True,
+                        )
+
+                    num_completed += 1
+                    self.printer.update_item(
+                        "searching", f"Searching... {num_completed}/{len(tasks)} completed"
+                    )
+            except Exception as e:
                 self.printer.update_item(
-                    "searching", f"Searching... {num_completed}/{len(tasks)} completed"
+                    "error",
+                    f"Error in search process: {str(e)}",
+                    is_done=True,
                 )
+            finally:
+                # Cancel any remaining tasks to prevent resource leaks
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
 
-            self.printer.mark_item_done("searching")
+                self.printer.mark_item_done("searching")
+
             return results
 
     async def _search(self, item: WebSearchItem) -> str | None:
@@ -279,6 +329,22 @@ class ResearchManager:
         Returns:
             A summary of the search results, or None if the search failed
         """
+        # Limit query length to prevent excessive resource usage
+        max_query_length = 200
+        if len(item.query) > max_query_length:
+            truncated_query = item.query[:max_query_length] + "..."
+            self.printer.update_item(
+                "warning",
+                f"Query truncated due to excessive length: '{truncated_query}'",
+                is_done=True,
+            )
+            item.query = item.query[:max_query_length]
+
+        # Limit reason length as well
+        max_reason_length = 500
+        if len(item.reason) > max_reason_length:
+            item.reason = item.reason[:max_reason_length] + "..."
+
         input = f"Search term: {item.query}\nReason for searching: {item.reason}"
 
         try:
@@ -294,11 +360,24 @@ class ResearchManager:
             # Wait for the task to complete with a timeout
             try:
                 result = await asyncio.wait_for(search_task, timeout=timeout_seconds)
-                return str(result.final_output)
+                output = str(result.final_output)
+
+                # Limit the size of the search result to prevent memory issues
+                max_result_length = 5000  # Limit to 5000 characters
+                if len(output) > max_result_length:
+                    truncated_output = output[:max_result_length] + "\n\n[Result truncated due to excessive length]"
+                    self.printer.update_item(
+                        "warning",
+                        f"Search result for '{item.query}' truncated due to excessive length",
+                        is_done=True,
+                    )
+                    return truncated_output
+
+                return output
             except asyncio.TimeoutError:
                 # Handle timeout
                 self.printer.update_item(
-                    "error",
+                    "warning",
                     f"Search for '{item.query}' timed out after {timeout_seconds} seconds",
                     is_done=True,
                 )
@@ -334,9 +413,9 @@ class ResearchManager:
 
         try:
             # Create a task for the report generation
-            # The Runner.run_streamed method returns a RunResultStreaming object, not a coroutine
-            # We need to handle it differently than a regular coroutine
-            result = Runner.run_streamed(
+            # The Runner.run_streamed method returns a coroutine that resolves to a RunResultStreaming object
+            # We need to await it to get the actual RunResultStreaming object
+            result = await Runner.run_streamed(
                 writer_agent,
                 input,
             )
