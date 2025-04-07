@@ -18,6 +18,7 @@ A Python-based research agent built using the OpenAI Agent SDK. This agent helps
 
 - Python 3.9+
 - OpenAI API key
+- Search API key (Serper or Tavily) for web search functionality
 
 ## Installation
 
@@ -32,10 +33,23 @@ A Python-based research agent built using the OpenAI Agent SDK. This agent helps
    pip install -r requirements.txt
    ```
 
-3. Create a `.env` file in the root directory with your OpenAI API key:
+3. Set up your API keys as system environment variables:
+
+   **Important**: This application requires API keys to be set directly in your system environment variables. It does not use .env files.
+
    ```
-   OPENAI_API_KEY=your-api-key-here
+   # On Windows
+   setx OPENAI_API_KEY your-openai-api-key-here
+   setx SERPER_API_KEY your-serper-api-key-here  # Optional, for web search
+   setx TAVILY_API_KEY your-tavily-api-key-here  # Optional, for web search
+
+   # On macOS/Linux
+   export OPENAI_API_KEY=your-openai-api-key-here
+   export SERPER_API_KEY=your-serper-api-key-here  # Optional, for web search
+   export TAVILY_API_KEY=your-tavily-api-key-here  # Optional, for web search
    ```
+
+   For more information on setting up the search APIs, see [SEARCH_SETUP.md](SEARCH_SETUP.md).
 
 ## Usage
 

@@ -1,5 +1,16 @@
 # Setting Up Web Search Functionality
 
+## Important Note About Environment Variables
+
+This application requires API keys to be set directly in your system environment variables. The application does not use python-dotenv or any .env file loading mechanism.
+
+You must manually add the following API keys to your system environment variables:
+- OPENAI_API_KEY (required)
+- SERPER_API_KEY (optional, for web search)
+- TAVILY_API_KEY (optional, for web search)
+
+## Web Search APIs
+
 This application supports web search functionality using either Serper API or Tavily API. To enable web search, you need to set up at least one of these APIs.
 
 ## Option 1: Serper API (Recommended)
@@ -12,7 +23,7 @@ Serper is a Google Search API that provides clean, structured search results.
    ```
    # On Windows
    setx SERPER_API_KEY your-api-key-here
-   
+
    # On macOS/Linux
    export SERPER_API_KEY=your-api-key-here
    ```
@@ -27,14 +38,14 @@ Tavily is a search API built specifically for AI applications.
    ```
    # On Windows
    setx TAVILY_API_KEY your-api-key-here
-   
+
    # On macOS/Linux
    export TAVILY_API_KEY=your-api-key-here
    ```
 
 ## Using Both APIs
 
-You can set up both APIs if you want. The application will prefer Tavily if both are available, as it's specifically designed for AI applications.
+You can set up both APIs if you want. The application will prefer Serper if both are available, as it has proven to be more reliable in our testing.
 
 ## Verifying Setup
 
@@ -44,7 +55,7 @@ When you run the application, it will display which search API it's using:
 Serper API key found. Web search will use Serper.
 ```
 
-or 
+or
 
 ```
 Tavily API key found. Web search will use Tavily.
