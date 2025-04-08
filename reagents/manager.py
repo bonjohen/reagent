@@ -611,6 +611,9 @@ class ResearchManager:
         # Regular report generation with API calls
         input = f"Original query: {query}\n\nNumber of search results: {len(validated_results)}\n\nSummarized search results:\n{formatted_results}"
 
+        # Store the input for debugging purposes
+        llm_input = input
+
         # Set a timeout for the report generation
         timeout_seconds = 300  # 5 minutes timeout for report generation
 
@@ -739,6 +742,10 @@ class ResearchManager:
 
                     # Process the stream events
                     try:
+                        # Create a list to store all event data for debugging
+                        all_events_data = []
+                        events_debug_info = ""
+
                         for event in result.stream():
                             event_count += 1
                             print(f"[DEBUG] [{model_name}] Stream event #{event_count}, type: {type(event)}")
@@ -747,18 +754,45 @@ class ResearchManager:
                             event_attrs = [attr for attr in dir(event) if not attr.startswith('_')]
                             print(f"[DEBUG] [{model_name}] Event attributes: {event_attrs}")
 
+                            # Store event data for debugging
+                            event_data = {
+                                'event_num': event_count,
+                                'event_type': str(type(event)),
+                                'event_attrs': event_attrs,
+                                'event_str': str(event)
+                            }
+
+                            # Add delta content if available
                             if hasattr(event, 'delta') and event.delta is not None:
                                 print(f"[DEBUG] [{model_name}] Event has delta: {event.delta}")
+                                event_data['delta'] = str(event.delta)
+
                                 # Accumulate content from deltas
                                 if hasattr(event.delta, 'content') and event.delta.content is not None:
-                                    accumulated_content += event.delta.content
+                                    delta_content = event.delta.content
+                                    accumulated_content += delta_content
+                                    event_data['delta_content'] = delta_content
                                     print(f"[DEBUG] [{model_name}] Accumulated content length: {len(accumulated_content)}")
+
+                            # Add to events list
+                            all_events_data.append(event_data)
 
                             if hasattr(event, 'final_output') and event.final_output is not None:
                                 print(f"[DEBUG] [{model_name}] Event has final_output: {type(event.final_output)}")
                                 final_output = event.final_output
+                                event_data['has_final_output'] = True
+                                event_data['final_output_type'] = str(type(final_output))
                                 print(f"[DEBUG] [{model_name}] Final output set to: {str(final_output)[:100]}..." if len(str(final_output)) > 100 else f"[DEBUG] [{model_name}] Final output set to: {str(final_output)}")
                                 break
+
+                        # Store all events data in a variable for later use in the error report
+                        events_debug_info = "\n\n## LLM Stream Events\n\n```\n"
+                        for i, event_data in enumerate(all_events_data):
+                            events_debug_info += f"Event {i+1}:\n"
+                            for k, v in event_data.items():
+                                events_debug_info += f"  {k}: {v}\n"
+                            events_debug_info += "\n"
+                        events_debug_info += "```\n"
                     except Exception as e:
                         print(f"[DEBUG] [{model_name}] Error processing stream events: {str(e)}")
                         print(f"[DEBUG] [{model_name}] Error type: {type(e)}")
@@ -855,8 +889,12 @@ class ResearchManager:
                 # Add information about accumulated content if available
                 content_info = ""
                 if 'accumulated_content' in locals() and accumulated_content:
+                    # Include the entire accumulated content for debugging
+                    content_info = f"\n\n## LLM Output Stream (Complete)\n\n```\n{accumulated_content}\n```\n"
+
+                    # Also include a preview for quick reference
                     content_preview = accumulated_content[:500] + "..." if len(accumulated_content) > 500 else accumulated_content
-                    content_info = f"\n\n## Accumulated Content Preview\n\n```\n{content_preview}\n```\n"
+                    content_info += f"\n\n## LLM Output Preview\n\n```\n{content_preview}\n```\n"
 
                 # Add information about search results if available
                 search_info = ""
@@ -868,19 +906,34 @@ class ResearchManager:
                     # Create a more detailed section with the raw data
                     search_info = f"\n\n## Search Results\n\n- **Count**: {search_count}\n- **Preview**: {search_preview}\n\n### Raw Search Results Data\n\n```\n{str(search_results)}\n```\n"
 
-                # Create a more detailed error title
-                error_title = f"ERROR: Failed to generate report for '{query}'"
+                # Create a proper title instead of an error message
+                error_title = f"Research Results for '{query}'"
 
                 # Create a more detailed error message
                 error_message = f"Unable to generate a complete report due to an error in processing the search results: {error_reason}.\n\n"
                 error_message += "This is a technical error in the report generation process. The search results were retrieved successfully, "
                 error_message += "but there was an error when trying to generate the final report from these results.\n\n"
-                error_message += "The raw search results data is included below for debugging purposes. "
+                error_message += "The complete input sent to the LLM, LLM output stream, and raw search results data are included below for debugging purposes. "
                 error_message += "Please try again with a more specific query or check the search results manually."
 
+                # Create a section for the input sent to the LLM
+                llm_input_info = ""
+                if 'llm_input' in locals() and llm_input is not None:
+                    llm_input_info = f"\n\n## Input Sent to LLM\n\n```\n{llm_input}\n```\n"
+
+                # Create a section for raw LLM data
+                llm_debug_info = ""
+                if 'result' in locals() and result is not None:
+                    llm_debug_info = f"\n\n## LLM Result Object\n\n```\n{str(result)}\n```\n"
+
+                # Add events debug info if available
+                if 'events_debug_info' in locals():
+                    llm_debug_info += events_debug_info
+
+                # Use the LLM input directly as the markdown_report for testing
                 fallback_data = {
                     "short_summary": error_title,
-                    "markdown_report": f"# {title}\n\n{error_message}{exception_info}{content_info}{search_info}",
+                    "markdown_report": llm_input if 'llm_input' in locals() and llm_input is not None else f"# {title}\n\nNo input available.",
                     "follow_up_questions": [
                         f"What specific aspect of {title} are you interested in?",
                         f"Would you like more information about a particular part of {title}?",

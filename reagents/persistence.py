@@ -74,7 +74,13 @@ class ResearchPersistence:
         """
         data = self._load_session_data(session_id)
         if data:
-            data["report"] = report_data
+            # Skip saving the report section to avoid large JSON files
+            # Just save the short_summary and follow_up_questions
+            minimal_report = {
+                "short_summary": report_data.get("short_summary", "Report generated"),
+                "follow_up_questions": report_data.get("follow_up_questions", [])
+            }
+            data["report"] = minimal_report
             data["status"] = "completed"
             self._save_session_data(session_id, data)
 
