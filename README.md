@@ -74,6 +74,38 @@ The research agent consists of three specialized agents:
 
 These agents are orchestrated by the `ResearchManager` class, which handles the flow of information between them.
 
+## Project Structure
+
+```
+.
+├── research_agent/       # Main application code
+│   ├── agents/           # Agent implementations
+│   │   ├── planner_agent.py
+│   │   ├── search_agent.py
+│   │   ├── writer_agent.py
+│   │   └── writer_agent_consolidated.py  # Current writer agent implementation
+│   ├── tools/            # Custom tools used by agents
+│   │   └── search_tools.py
+│   ├── config.py         # Configuration settings
+│   ├── manager.py        # Research manager orchestrating the agents
+│   ├── openai_patch.py   # Utility to disable OpenAI trace ingestion
+│   ├── persistence.py    # Data persistence functionality
+│   └── printer.py        # Terminal output formatting
+├── legacy/              # Legacy code kept for reference
+│   └── agents/          # Previous agent implementations
+├── utils/               # Utility scripts
+│   └── repair_session_files.py  # Tool for fixing corrupted session files
+├── tests/               # Test suite
+├── main.py              # Application entry point
+├── requirements.txt     # Project dependencies
+└── README.md            # This file
+```
+
+### Notes on Special Directories
+
+- **legacy/**: Contains previous versions of code that have been superseded by newer implementations but are kept for reference purposes.
+- **utils/**: Contains standalone utility scripts that are not part of the main application flow but are useful for maintenance or debugging.
+
 ## License
 
 MIT

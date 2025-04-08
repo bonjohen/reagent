@@ -1,8 +1,14 @@
 """
 Repair script for fixing existing research session files with search result errors.
 
-This script scans through all research session files and fixes any that contain
+This utility script scans through all research session files and fixes any that contain
 the "[Search error: sequence item 0: expected str instance, dict found]" error.
+
+Usage:
+    python -m utils.repair_session_files
+
+This script is a maintenance tool and not part of the main application flow.
+It should be run manually when corrupted session files are detected.
 """
 
 import os

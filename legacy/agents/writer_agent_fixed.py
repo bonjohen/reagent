@@ -1,5 +1,10 @@
 """
 Writer agent for generating research reports.
+
+LEGACY VERSION: This is a previous version of the writer agent that has been superseded
+by writer_agent_consolidated.py. It is kept for reference purposes only.
+
+This version includes fixes for JSON parsing issues in the report generation.
 """
 
 import re

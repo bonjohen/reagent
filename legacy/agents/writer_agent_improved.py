@@ -1,5 +1,11 @@
 """
 Writer agent for generating research reports.
+
+LEGACY VERSION: This is a previous version of the writer agent that has been superseded
+by writer_agent_consolidated.py. It is kept for reference purposes only.
+
+This version includes improvements to the report generation process, including better
+error handling and formatting.
 """
 
 import re
@@ -67,84 +73,44 @@ class ReportData(BaseModel):
         """
         try:
             # Extract JSON from the response if it's wrapped in ```json blocks
-            print(f"[DEBUG] [{model}] Response length: {len(response)}")
-            
             json_match = re.search(r'```(?:json)?\s*(.*?)```', response, re.DOTALL)
             if json_match:
-                print(f"[DEBUG] [{model}] Found ```json code block")
                 json_str = json_match.group(1).strip()
-                print(f"[DEBUG] [{model}] Extracted JSON from ```json block, length: {len(json_str)}")
             else:
-                print(f"[DEBUG] [{model}] No ```json block found, using full response")
                 json_str = response
             
             # Handle escaped characters in the JSON string
-            print(f"[DEBUG] [{model}] Handling escaped characters in JSON string")
             json_str = json_str.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
-            print(f"[DEBUG] [{model}] After handling escapes, JSON length: {len(json_str)}")
             
             # Try to parse the JSON
-            print(f"[DEBUG] [{model}] Attempting to parse JSON with json.loads()")
             try:
                 data = json.loads(json_str)
-                print(f"[DEBUG] [{model}] JSON parsed successfully")
             except json.JSONDecodeError as json_err:
-                print(f"[DEBUG] [{model}] JSON decode error: {str(json_err)}")
-                print(f"[DEBUG] [{model}] Error position: {json_err.pos}, line: {json_err.lineno}, column: {json_err.colno}")
-                print(f"[DEBUG] [{model}] JSON snippet at error: {json_str[max(0, json_err.pos-20):json_err.pos+20]}")
-                
                 # Try to fix common JSON formatting issues
-                print(f"[DEBUG] [{model}] Attempting to repair JSON")
                 fixed_json_str = cls._attempt_json_repair(json_str)
-                print(f"[DEBUG] [{model}] Repaired JSON length: {len(fixed_json_str)}")
-                print(f"[DEBUG] [{model}] Repaired JSON preview: {fixed_json_str[:100]}..." if len(fixed_json_str) > 100 else f"[DEBUG] [{model}] Repaired JSON: {fixed_json_str}")
                 
                 try:
                     data = json.loads(fixed_json_str)
-                    print(f"[DEBUG] [{model}] Repaired JSON parsed successfully")
                 except json.JSONDecodeError as repair_err:
-                    print(f"[DEBUG] [{model}] Repair failed, JSON still invalid: {str(repair_err)}")
-                    
-                    # Try a more aggressive approach - convert the JSON to a proper format
-                    print(f"[DEBUG] [{model}] Attempting more aggressive JSON repair")
+                    # Try a more aggressive approach - extract the components manually
                     try:
                         # Extract the components manually using regex
                         short_summary_match = re.search(r'"short_summary"\s*:\s*"([^"]*)"', json_str)
-                        
-                        # Try two different patterns for markdown_report
-                        # Pattern 1: markdown_report followed by follow_up_questions
                         markdown_report_match = re.search(r'"markdown_report"\s*:\s*"(.*?)"\s*,\s*"follow_up_questions"', json_str, re.DOTALL)
-                        
-                        # Pattern 2: markdown_report at the end of the JSON
-                        if not markdown_report_match:
-                            markdown_report_match = re.search(r'"markdown_report"\s*:\s*"(.*?)"\s*\}', json_str, re.DOTALL)
-                        
                         follow_up_questions_match = re.search(r'"follow_up_questions"\s*:\s*\[(.*?)\]', json_str, re.DOTALL)
                         
-                        # If we have short_summary and markdown_report but not follow_up_questions,
-                        # we can create default follow-up questions
-                        if short_summary_match and markdown_report_match:
+                        if short_summary_match and markdown_report_match and follow_up_questions_match:
                             short_summary = short_summary_match.group(1)
                             markdown_report = markdown_report_match.group(1)
+                            follow_up_questions_str = follow_up_questions_match.group(1)
                             
                             # Clean up the markdown report - replace escaped newlines with actual newlines
                             markdown_report = markdown_report.replace('\\n', '\n')
                             
-                            # Parse the follow-up questions if available, otherwise use defaults
+                            # Parse the follow-up questions
                             follow_up_questions = []
-                            if follow_up_questions_match:
-                                follow_up_questions_str = follow_up_questions_match.group(1)
-                                for q in re.findall(r'"([^"]*)"', follow_up_questions_str):
-                                    follow_up_questions.append(q)
-                            else:
-                                # Default follow-up questions if none are found
-                                follow_up_questions = [
-                                    "What are the most recent developments in this field?",
-                                    "How might these findings impact related industries?",
-                                    "What ethical considerations should be taken into account?",
-                                    "What are the limitations of the current research?",
-                                    "What future research directions seem most promising?"
-                                ]
+                            for q in re.findall(r'"([^"]*)"', follow_up_questions_str):
+                                follow_up_questions.append(q)
                             
                             # Create a clean JSON object
                             data = {
@@ -152,37 +118,28 @@ class ReportData(BaseModel):
                                 "markdown_report": markdown_report,
                                 "follow_up_questions": follow_up_questions
                             }
-                            print(f"[DEBUG] [{model}] Manual extraction successful")
                         else:
                             raise ValueError("Could not extract all required fields")
                     except Exception as e:
-                        print(f"[DEBUG] [{model}] Manual extraction failed: {str(e)}")
-                        raise
+                        raise ValueError(f"Failed to parse JSON: {str(e)}")
             
             # Validate required fields
-            print(f"[DEBUG] [{model}] Validating required fields")
             required_fields = ['short_summary', 'markdown_report', 'follow_up_questions']
             for field in required_fields:
                 if field not in data:
                     raise ValueError(f"Missing required field: {field}")
-                print(f"[DEBUG] [{model}] Field '{field}' is present")
             
             # Validate field types
-            print(f"[DEBUG] [{model}] Validating field types")
             if not isinstance(data['short_summary'], str):
                 raise TypeError(f"short_summary must be a string, got {type(data['short_summary'])}")
-            print(f"[DEBUG] [{model}] short_summary type: {type(data['short_summary'])}")
             
             if not isinstance(data['markdown_report'], str):
                 raise TypeError(f"markdown_report must be a string, got {type(data['markdown_report'])}")
-            print(f"[DEBUG] [{model}] markdown_report type: {type(data['markdown_report'])}")
             
             if not isinstance(data['follow_up_questions'], list):
                 raise TypeError(f"follow_up_questions must be a list, got {type(data['follow_up_questions'])}")
-            print(f"[DEBUG] [{model}] follow_up_questions type: {type(data['follow_up_questions'])}")
             
             # Validate follow_up_questions items
-            print(f"[DEBUG] [{model}] Validating follow_up_questions items")
             for i, q in enumerate(data['follow_up_questions']):
                 if not isinstance(q, str):
                     raise TypeError(f"follow_up_questions[{i}] must be a string, got {type(q)}")
@@ -191,41 +148,21 @@ class ReportData(BaseModel):
             data['model'] = model
             
             # All validations passed, create the object
-            print(f"[DEBUG] [{model}] All validations passed, creating ReportData object")
-            result = cls.model_validate(data)
-            print(f"[DEBUG] [{model}] ReportData object created successfully")
-            return result
+            return cls.model_validate(data)
             
         except Exception as e:
-            print(f"[DEBUG] [{model}] Error in ReportData.from_response: {type(e).__name__}")
-            print(f"[DEBUG] [{model}] Error message: {str(e)}")
-            
             # Create a fallback report if parsing fails
-            print(f"[DEBUG] [{model}] Creating fallback error report")
             fallback_data = {
                 'short_summary': f"Error parsing report: {str(e)}",
                 'markdown_report': f"# Error in Report Generation\n\nThere was an error parsing the report data: {str(e)}\n\nRaw response:\n\n{response}",
                 'follow_up_questions': ["What went wrong with the report generation?", "How can the report format be improved?"]
             }
-            print(f"[{model}] Error parsing report JSON: {str(e)}\nFalling back to error report.")
-            
-            try:
-                result = cls.model_validate(fallback_data)
-                print(f"[DEBUG] [{model}] Fallback report created successfully")
-                return result
-            except Exception as validate_err:
-                print(f"[DEBUG] [{model}] Error creating fallback report: {type(validate_err).__name__}: {str(validate_err)}")
-                raise
+            print(f"Error parsing report JSON: {str(e)}\nFalling back to error report.")
+            return cls.model_validate(fallback_data)
     
     @staticmethod
     def _attempt_json_repair(json_str: str) -> str:
         """Attempt to repair common JSON formatting issues."""
-        # First, check if the JSON is missing the follow_up_questions field
-        if '"markdown_report"' in json_str and '"follow_up_questions"' not in json_str:
-            # Add default follow_up_questions before the closing brace
-            if json_str.rstrip().endswith('}'):
-                json_str = json_str.rstrip()[:-1] + ',\n    "follow_up_questions": [\n        "What are the most recent developments in this field?",\n        "How might these findings impact related industries?",\n        "What ethical considerations should be taken into account?",\n        "What are the limitations of the current research?",\n        "What future research directions seem most promising?"\n    ]\n}'
-        
         # First, normalize all newlines to \\n
         # Replace all actual newlines within string values with escaped newlines
         lines = json_str.split('\n')
