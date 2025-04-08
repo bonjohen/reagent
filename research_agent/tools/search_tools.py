@@ -69,20 +69,30 @@ class SerperSearchTool:
             "num": num_results
         }
 
+        # Create the session outside the try block to ensure it's always closed
+        session = None
         try:
             logger.info(f"Performing Serper search for: {query}")
-            async with aiohttp.ClientSession() as session:
-                async with session.post(self.endpoint, headers=headers, json=payload) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        logger.error(f"Serper API error: {response.status} - {error_text}")
-                        return f"[Search error: Serper API returned status {response.status}]"
+            session = aiohttp.ClientSession()
+            async with session.post(self.endpoint, headers=headers, json=payload) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"Serper API error: {response.status} - {error_text}")
+                    return f"[Search error: Serper API returned status {response.status}]"
 
-                    data = await response.json()
-                    return self._format_results(data, query)
+                data = await response.json()
+                return self._format_results(data, query)
         except Exception as e:
             logger.error(f"Error in Serper search: {str(e)}")
             return f"[Search error: {str(e)}]"
+        finally:
+            # Ensure the session is always closed, even if an exception occurs
+            if session is not None:
+                try:
+                    await session.close()
+                    logger.debug(f"Closed aiohttp session for Serper search: {query}")
+                except Exception as e:
+                    logger.error(f"Error closing Serper search session: {str(e)}")
 
     def _format_results(self, data: Dict[str, Any], query: str, max_chars: int = 8000) -> str:
         """Format the search results into a readable string with size limits.
@@ -284,20 +294,30 @@ class TavilySearchTool:
             "exclude_domains": []
         }
 
+        # Create the session outside the try block to ensure it's always closed
+        session = None
         try:
             logger.info(f"Performing Tavily search for: {query}")
-            async with aiohttp.ClientSession() as session:
-                async with session.get(self.endpoint, headers=headers, params=params) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        logger.error(f"Tavily API error: {response.status} - {error_text}")
-                        return f"[Search error: Tavily API returned status {response.status}]"
+            session = aiohttp.ClientSession()
+            async with session.get(self.endpoint, headers=headers, params=params) as response:
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"Tavily API error: {response.status} - {error_text}")
+                    return f"[Search error: Tavily API returned status {response.status}]"
 
-                    data = await response.json()
-                    return self._format_results(data, query)
+                data = await response.json()
+                return self._format_results(data, query)
         except Exception as e:
             logger.error(f"Error in Tavily search: {str(e)}")
             return f"[Search error: {str(e)}]"
+        finally:
+            # Ensure the session is always closed, even if an exception occurs
+            if session is not None:
+                try:
+                    await session.close()
+                    logger.debug(f"Closed aiohttp session for Tavily search: {query}")
+                except Exception as e:
+                    logger.error(f"Error closing Tavily search session: {str(e)}")
 
     def _format_results(self, data: Dict[str, Any], query: str, max_chars: int = 8000) -> str:
         """Format the search results into a readable string with size limits.

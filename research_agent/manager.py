@@ -240,7 +240,8 @@ class ResearchManager:
             )
 
             # Parse the response to get the search plan
-            search_plan = WebSearchPlan.from_response(str(result.final_output))
+            # Pass the original query to use in fallback plan if needed
+            search_plan = WebSearchPlan.from_response(str(result.final_output), original_query=query)
 
             self.printer.update_item(
                 "planning",
@@ -287,9 +288,11 @@ class ResearchManager:
 
             async def rate_limited_search(item: WebSearchItem) -> str | None:
                 """Execute a search with rate limiting and timeout."""
+                # Add a small delay to prevent API rate limits BEFORE acquiring the semaphore
+                # This prevents blocking other tasks while waiting
+                await asyncio.sleep(delay_between_searches)
+
                 async with semaphore:  # Limit concurrent searches
-                    # Add a small delay to prevent API rate limits
-                    await asyncio.sleep(delay_between_searches)
                     try:
                         # Apply timeout to individual search
                         return await asyncio.wait_for(self._search(item), timeout=search_timeout)
@@ -383,19 +386,43 @@ class ResearchManager:
         """
         # Limit query length to prevent excessive resource usage
         max_query_length = 200
+
         if len(item.query) > max_query_length:
+            original_query = item.query
             truncated_query = item.query[:max_query_length] + "..."
+
+            # Update the printer with a warning
             self.printer.update_item(
                 "warning",
                 f"Query truncated due to excessive length: '{truncated_query}'",
                 is_done=True,
             )
+
+            # Log the truncation
+            print(f"WARNING: Query truncated from {len(original_query)} to {max_query_length} characters")
+
+            # Truncate the query
             item.query = item.query[:max_query_length]
 
         # Limit reason length as well
         max_reason_length = 500
+
         if len(item.reason) > max_reason_length:
-            item.reason = item.reason[:max_reason_length] + "..."
+            original_reason = item.reason
+            truncated_reason = item.reason[:max_reason_length] + "..."
+
+            # Update the printer with a warning
+            self.printer.update_item(
+                "warning",
+                f"Reason truncated due to excessive length",
+                is_done=True,
+            )
+
+            # Log the truncation
+            print(f"WARNING: Reason truncated from {len(original_reason)} to {max_reason_length} characters")
+
+            # Truncate the reason
+            item.reason = truncated_reason
 
         input = f"Search term: {item.query}\nReason for searching: {item.reason}"
 
@@ -415,13 +442,21 @@ class ResearchManager:
 
                     # Limit the size of the search result to prevent memory issues
                     max_result_length = 5000  # Limit to 5000 characters
+
                     if len(result) > max_result_length:
-                        truncated_result = result[:max_result_length] + "\n\n[Result truncated due to excessive length]"
+                        original_result_length = len(result)
+                        truncated_result = result[:max_result_length] + "\n\n[NOTICE: Result truncated due to excessive length. Original length: " + str(original_result_length) + " characters]"
+
+                        # Update the printer with a warning
                         self.printer.update_item(
                             "warning",
-                            f"Search result for '{item.query}' truncated due to excessive length",
+                            f"Search result for '{item.query}' truncated from {original_result_length} to {max_result_length} characters",
                             is_done=True,
                         )
+
+                        # Log the truncation
+                        print(f"WARNING: Search result truncated from {original_result_length} to {max_result_length} characters")
+
                         return truncated_result
 
                     return result
@@ -505,14 +540,13 @@ class ResearchManager:
             print(f"[DEBUG] [{model_name}] Query: {query[:100]}..." if len(query) > 100 else f"[DEBUG] [{model_name}] Query: {query}")
             print(f"[DEBUG] [{model_name}] Search results count: {len(search_results)}")
 
-            # The Runner.run_streamed method returns a RunResultStreaming object directly, not a coroutine
-            # We should NOT await it as it's not awaitable
+            # The Runner.run_streamed method returns a coroutine that should be awaited
             print(f"[DEBUG] [{model_name}] Calling Runner.run_streamed...")
-            result = Runner.run_streamed(
+            result = await Runner.run_streamed(
                 writer_agent,
                 input,
             )
-            print(f"[DEBUG] [{model_name}] Runner.run_streamed called successfully")
+            print(f"[DEBUG] [{model_name}] Runner.run_streamed completed successfully")
 
             # Set up a timeout for the report generation
             start_time = time.time()
@@ -555,12 +589,21 @@ class ResearchManager:
             "Finishing report...",
         ]
 
-        last_update = time.time()
         next_message = 0
 
         try:
-            # Process the stream events with timeout handling
-            async for _ in result.stream_events():
+            # Since we're now awaiting the run_streamed call, we don't need to process stream events
+            # Just update progress messages periodically
+            current_time = time.time()
+
+            # Update progress messages
+            while next_message < len(update_messages):
+                self.printer.update_item("writing", update_messages[next_message])
+                next_message += 1
+
+                # Add a small delay between updates
+                await asyncio.sleep(5)
+
                 # Check for timeout
                 current_time = time.time()
                 if current_time - start_time > timeout_seconds:
@@ -571,12 +614,6 @@ class ResearchManager:
                     )
                     print(f"Report generation timed out after {timeout_seconds} seconds")
                     raise TimeoutError(f"Report generation timed out after {timeout_seconds} seconds")
-
-                # Update progress messages
-                if current_time - last_update > 5 and next_message < len(update_messages):
-                    self.printer.update_item("writing", update_messages[next_message])
-                    next_message += 1
-                    last_update = current_time
 
             # Get the model being used
             model_name = writer_agent.model

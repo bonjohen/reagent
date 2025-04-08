@@ -39,8 +39,16 @@ class WebSearchPlan(BaseModel):
     )
 
     @classmethod
-    def from_response(cls, response: str) -> 'WebSearchPlan':
-        """Parse a JSON response into a WebSearchPlan object."""
+    def from_response(cls, response: str, original_query: str = None) -> 'WebSearchPlan':
+        """Parse a JSON response into a WebSearchPlan object.
+
+        Args:
+            response: The JSON response from the planner agent
+            original_query: The original user query (used for fallback plan)
+
+        Returns:
+            A WebSearchPlan object with search items
+        """
         try:
             # Extract JSON from the response if it's wrapped in markdown code blocks
             if '```json' in response and '```' in response:
@@ -85,9 +93,40 @@ class WebSearchPlan(BaseModel):
 
             return cls.model_validate(data)
         except Exception as e:
-            # Create a fallback plan if parsing fails
+            # Create a fallback plan that preserves the original query intent
             fallback_data = {
-                'searches': [
+                'searches': []
+            }
+
+            # Always include the original query as the first search item if available
+            if original_query:
+                fallback_data['searches'].append({
+                    'query': original_query,
+                    'reason': 'Direct search using the original query'
+                })
+
+                # Add variations of the original query
+                words = original_query.split()
+                if len(words) > 3:  # If query has more than 3 words, use the first 3 for a more focused search
+                    fallback_data['searches'].append({
+                        'query': " ".join(words[:3]) + " guide",
+                        'reason': 'Find guides related to the main topic'
+                    })
+
+                # Add a search for the latest information
+                fallback_data['searches'].append({
+                    'query': original_query + " latest research",
+                    'reason': 'Get up-to-date information on the topic'
+                })
+
+                # Add a search for expert analysis
+                fallback_data['searches'].append({
+                    'query': original_query + " expert analysis",
+                    'reason': 'Get professional insights on the topic'
+                })
+            else:
+                # If no original query is available, use generic fallback searches
+                fallback_data['searches'].extend([
                     {
                         'query': 'error in search plan generation',
                         'reason': f"Error parsing search plan: {str(e)}"
@@ -96,9 +135,9 @@ class WebSearchPlan(BaseModel):
                         'query': 'basic research methodology',
                         'reason': 'Fallback search to provide some useful information'
                     }
-                ]
-            }
-            print(f"Error parsing search plan JSON: {str(e)}\nFalling back to basic search plan.")
+                ])
+
+            print(f"Error parsing search plan JSON: {str(e)}\nFalling back to query-based search plan.")
             return cls.model_validate(fallback_data)
 
     @staticmethod

@@ -125,47 +125,53 @@
 - **Recurrence** Initial Incident
 - **Test**: Added tests in tests/test_improved_search_tools.py to verify error handling
 
-## 18. Race Condition in Search Rate Limiting [PENDING 04-07-2025]
+## 18. Race Condition in Search Rate Limiting [FIXED 04-07-2025]
 - **Location**: research_agent/manager.py
 - **Bug**: Rate limiting delay occurs after acquiring semaphore, potentially blocking other tasks
-- **Fix**: Move delay before semaphore acquisition
+- **Fix**: Moved delay before semaphore acquisition to prevent blocking other tasks
 - **Impact**: Improves concurrent search performance and prevents unnecessary blocking
 - **Recurrence** Initial Incident
+- **Test**: Added tests in tests/test_search_rate_limiting.py to verify proper rate limiting behavior
 
-## 19. Memory Leak in Custom Search Tools [PENDING 04-07-2025]
+## 19. Memory Leak in Custom Search Tools [FIXED 04-07-2025]
 - **Location**: research_agent/tools/search_tools.py
 - **Bug**: aiohttp sessions might not be properly closed in error cases
-- **Fix**: Ensure proper session cleanup using async context managers
+- **Fix**: Implemented explicit session creation and cleanup in finally blocks
 - **Impact**: Prevents memory leaks during extended operation
 - **Recurrence** Initial Incident
+- **Test**: Added tests in tests/test_search_tools_session_cleanup.py to verify proper session cleanup
 
-## 20. Silent Truncation [PENDING 04-07-2025]
+## 20. Silent Truncation [FIXED 04-07-2025]
 - **Location**: research_agent/manager.py
 - **Bug**: Search queries and results are truncated without notifying the user
-- **Fix**: Add proper logging and user notification for truncated content
+- **Fix**: Added visible notifications with original content length when content is truncated
 - **Impact**: Improves transparency when content is modified
 - **Recurrence** Initial Incident
+- **Test**: Added tests in tests/test_truncation_notification.py to verify truncation notifications
 
-## 21. Incomplete JSON Error Recovery [PENDING 04-07-2025]
+## 21. Incomplete JSON Error Recovery [FIXED 04-07-2025]
 - **Location**: research_agent/agents/planner_agent.py
 - **Bug**: Fallback plan doesn't preserve original query intent
-- **Fix**: Implement smarter fallback that maintains query context
+- **Fix**: Implemented smarter fallback that maintains query context and creates relevant variations
 - **Impact**: Provides more relevant results when JSON parsing fails
 - **Recurrence** Initial Incident
+- **Test**: Added tests in tests/test_json_error_recovery.py to verify query intent preservation
 
-## 22. Race Condition in Report Generation [PENDING 04-07-2025]
+## 22. Race Condition in Report Generation [FIXED 04-07-2025]
 - **Location**: research_agent/manager.py
 - **Bug**: Missing `await` in `result = Runner.run_streamed(writer_agent, input)`
 - **Fix**: Added `await` to properly handle async stream: `result = await Runner.run_streamed(writer_agent, input)`
 - **Impact**: Prevents race condition that could cause data corruption or incomplete reports
 - **Recurrence**: Repeat Incident (1)
+- **Test**: Added tests in tests/test_report_generation.py to verify proper async handling
 
-## 23. Memory Leak in Terminal Display [PENDING 04-07-2025]
+## 23. Memory Leak in Terminal Display [FIXED 04-07-2025]
 - **Location**: research_agent/printer.py
 - **Bug**: Live display resources not properly cleaned up if exception occurs
 - **Fix**: Implemented proper context manager with improved `__exit__` method that handles exceptions
 - **Impact**: Prevents terminal state corruption and resource leaks
 - **Recurrence**: Repeat Incident (2)
+- **Test**: Verified with test_context_manager_with_exception in tests/unit/research_agent/test_printer.py
 
 ## 24. Websocket Connection Leaks [PENDING 04-07-2025]
 - **Location**: research_agent/tools/websocket_client.py
