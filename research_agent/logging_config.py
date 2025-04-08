@@ -4,7 +4,7 @@ Logging configuration for the research agent.
 
 import logging
 from research_agent.logging_filter import apply_filters
-from research_agent.openai_patch import disable_openai_tracing
+from research_agent.config import initialize_app
 
 def configure_logging():
     """Configure logging for the research agent."""
@@ -26,8 +26,8 @@ def configure_logging():
     # Apply our custom filters to suppress specific messages
     apply_filters()
 
-    # Disable OpenAI tracing
-    disable_openai_tracing()
+    # Initialize the application
+    initialize_app()
 
     # You can add more loggers to suppress here if needed
     # For example:

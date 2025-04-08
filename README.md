@@ -86,9 +86,8 @@ These agents are orchestrated by the `ResearchManager` class, which handles the 
 │   │   └── writer_agent_consolidated.py  # Current writer agent implementation
 │   ├── tools/            # Custom tools used by agents
 │   │   └── search_tools.py
-│   ├── config.py         # Configuration settings
+│   ├── config.py         # Configuration settings and app initialization
 │   ├── manager.py        # Research manager orchestrating the agents
-│   ├── openai_patch.py   # Utility to disable OpenAI trace ingestion
 │   ├── persistence.py    # Data persistence functionality
 │   └── printer.py        # Terminal output formatting
 ├── legacy/              # Legacy code kept for reference
