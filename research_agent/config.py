@@ -27,31 +27,47 @@ class ModelConfig:
     PLANNER_FALLBACK_MODEL = "gpt-3.5-turbo-0125"
 
     @classmethod
+    def get_model_with_fallback(cls, model_type: str):
+        """Get a model name with fallback.
+
+        Args:
+            model_type: One of "writer", "search", or "planner"
+
+        Returns:
+            The model name to use, falling back to the fallback model if needed
+
+        Raises:
+            ValueError: If an unknown model type is provided
+        """
+        model_attr = f"{model_type.upper()}_MODEL"
+        fallback_attr = f"{model_type.upper()}_FALLBACK_MODEL"
+
+        if not hasattr(cls, model_attr) or not hasattr(cls, fallback_attr):
+            raise ValueError(f"Unknown model type: {model_type}")
+
+        primary_model = getattr(cls, model_attr)
+        fallback_model = getattr(cls, fallback_attr)
+
+        if primary_model is None:
+            logger.warning(f"Primary {model_type} model is not available")
+            logger.info(f"Falling back to {fallback_model}")
+            return fallback_model
+        return primary_model
+
+    @classmethod
     def get_writer_model(cls):
         """Get the writer model name with fallback."""
-        if cls.WRITER_MODEL is None:
-            logger.warning("Primary writer model is not available")
-            logger.info(f"Falling back to {cls.WRITER_FALLBACK_MODEL}")
-            return cls.WRITER_FALLBACK_MODEL
-        return cls.WRITER_MODEL
+        return cls.get_model_with_fallback("writer")
 
     @classmethod
     def get_search_model(cls):
         """Get the search model name with fallback."""
-        if cls.SEARCH_MODEL is None:
-            logger.warning("Primary search model is not available")
-            logger.info(f"Falling back to {cls.SEARCH_FALLBACK_MODEL}")
-            return cls.SEARCH_FALLBACK_MODEL
-        return cls.SEARCH_MODEL
+        return cls.get_model_with_fallback("search")
 
     @classmethod
     def get_planner_model(cls):
         """Get the planner model name with fallback."""
-        if cls.PLANNER_MODEL is None:
-            logger.warning("Primary planner model is not available")
-            logger.info(f"Falling back to {cls.PLANNER_FALLBACK_MODEL}")
-            return cls.PLANNER_FALLBACK_MODEL
-        return cls.PLANNER_MODEL
+        return cls.get_model_with_fallback("planner")
 
 
 def disable_openai_tracing():

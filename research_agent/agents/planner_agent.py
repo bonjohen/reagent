@@ -113,11 +113,17 @@ class WebSearchPlan(BaseModel):
                         'reason': 'Find guides related to the main topic'
                     })
 
-                # Add a search for the latest information
-                fallback_data['searches'].append({
-                    'query': original_query + " latest research",
-                    'reason': 'Get up-to-date information on the topic'
-                })
+                # Add a search for the latest information, but avoid redundancy
+                if not "latest" in original_query.lower():
+                    fallback_data['searches'].append({
+                        'query': original_query + " latest research",
+                        'reason': 'Get up-to-date information on the topic'
+                    })
+                else:
+                    fallback_data['searches'].append({
+                        'query': original_query + " current developments",
+                        'reason': 'Get up-to-date information on the topic'
+                    })
 
                 # Add a search for expert analysis
                 fallback_data['searches'].append({

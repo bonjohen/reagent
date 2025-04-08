@@ -3,19 +3,16 @@ Custom search tools using Serper and Tavily APIs.
 These provide more reliable search functionality than the default WebSearchTool.
 """
 
-import os
-import json
-import aiohttp
 import logging
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 
 from research_agent.config import EnvironmentConfig, AppConstants
+from research_agent.tools.base_search_tool import BaseSearchTool
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class SerperSearchTool:
+class SerperSearchTool(BaseSearchTool):
     """Search tool that uses the Serper API to get Google search results."""
 
     def __init__(self, api_key: Optional[str] = None):
@@ -24,28 +21,12 @@ class SerperSearchTool:
         Args:
             api_key: Serper API key. If not provided, will try to get from environment.
         """
-        self.api_key = api_key or EnvironmentConfig.get_serper_api_key()
+        super().__init__(api_key or EnvironmentConfig.get_serper_api_key(), "Serper")
         self.endpoint = "https://google.serper.dev/search"
 
         # Validate API key format
         if self.api_key:
             self._validate_api_key()
-
-    def _validate_api_key(self) -> None:
-        """Validate the Serper API key format.
-
-        Serper API keys are typically 32-character alphanumeric strings.
-        """
-        if not self.api_key:
-            return
-
-        # Check for minimum length
-        if len(self.api_key) < 20:  # Serper keys are typically longer
-            logger.warning(f"Serper API key appears to be too short: {len(self.api_key)} chars")
-
-        # Check for valid characters (alphanumeric)
-        if not self.api_key.isalnum():
-            logger.warning("Serper API key contains non-alphanumeric characters - this may cause issues")
 
     async def search(self, query: str, num_results: int = AppConstants.MAX_SEARCH_RESULTS) -> str:
         """Perform a search using the Serper API.
@@ -71,32 +52,15 @@ class SerperSearchTool:
             "num": num_results
         }
 
-        # Create the session outside the try block to ensure it's always closed
-        session = None
-        try:
-            logger.info(f"Performing Serper search for: {query}")
-            session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AppConstants.API_TIMEOUT_SECONDS))
-            async with session.post(self.endpoint, headers=headers, json=payload) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"Serper API error: {response.status} - {error_text}")
-                    return f"[Search error: Serper API returned status {response.status}]"
+        # Use the base class method to make the API request
+        data, error = await self._make_api_request(self.endpoint, headers, payload, query)
+        if error:
+            return error
 
-                data = await response.json()
-                return self._format_results(data, query)
-        except Exception as e:
-            logger.error(f"Error in Serper search: {str(e)}")
-            return f"[Search error: {str(e)}]"
-        finally:
-            # Ensure the session is always closed, even if an exception occurs
-            if session is not None:
-                try:
-                    await session.close()
-                    logger.debug(f"Closed aiohttp session for Serper search: {query}")
-                except Exception as e:
-                    logger.error(f"Error closing Serper search session: {str(e)}")
+        # Format the results
+        return self._format_results(data, query)
 
-    def _format_results(self, data: Dict[str, Any], query: str, max_chars: int = 8000) -> str:
+    def _format_results(self, data: Dict[str, Any], query: str, max_chars: int = 16000) -> str:
         """Format the search results into a readable string with size limits.
 
         Args:
@@ -217,18 +181,11 @@ class SerperSearchTool:
         if not results:
             return f"No results found for query: {query}"
 
-        # Combine all results
-        result_text = f"Search results for '{query}':\n\n" + "\n".join(results)
-
-        # Add truncation notice if needed
-        if truncated:
-            truncation_notice = "\n[Note: Search results were truncated due to size limits]"
-            result_text += truncation_notice
-
-        return result_text
+        # Use the base class method to format the results
+        return self._format_search_results(results, query, truncated, max_chars=AppConstants.MAX_SEARCH_RESULT_LENGTH)
 
 
-class TavilySearchTool:
+class TavilySearchTool(BaseSearchTool):
     """Search tool that uses the Tavily API for web search."""
 
     def __init__(self, api_key: Optional[str] = None):
@@ -237,33 +194,12 @@ class TavilySearchTool:
         Args:
             api_key: Tavily API key. If not provided, will try to get from environment.
         """
-        self.api_key = api_key or EnvironmentConfig.get_tavily_api_key()
+        super().__init__(api_key or EnvironmentConfig.get_tavily_api_key(), "Tavily")
         self.endpoint = "https://api.tavily.com/search"
 
         # Validate API key format
         if self.api_key:
-            self._validate_api_key()
-
-    def _validate_api_key(self) -> None:
-        """Validate the Tavily API key format.
-
-        Tavily API keys typically start with 'tvly-' followed by a long alphanumeric string.
-        """
-        if not self.api_key:
-            return
-
-        # Check for proper prefix
-        if not self.api_key.startswith("tvly-"):
-            logger.warning("Tavily API key does not start with 'tvly-' prefix - this may cause issues")
-
-        # Check for minimum length
-        if len(self.api_key) < 20:  # Tavily keys are typically longer
-            logger.warning(f"Tavily API key appears to be too short: {len(self.api_key)} chars - this may cause issues")
-
-        # Check for valid characters after prefix
-        key_body = self.api_key[5:] if self.api_key.startswith("tvly-") else self.api_key
-        if not key_body.isalnum():
-            logger.warning("Tavily API key contains invalid characters - this may cause issues")
+            self._validate_api_key(min_length=20, prefix="tvly-", check_alphanumeric=True)
 
     async def search(self, query: str, search_depth: str = AppConstants.MAX_SEARCH_DEPTH, max_results: int = AppConstants.MAX_SEARCH_RESULTS) -> str:
         """Perform a search using the Tavily API.
@@ -296,30 +232,13 @@ class TavilySearchTool:
             "exclude_domains": []
         }
 
-        # Create the session outside the try block to ensure it's always closed
-        session = None
-        try:
-            logger.info(f"Performing Tavily search for: {query}")
-            session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AppConstants.API_TIMEOUT_SECONDS))
-            async with session.get(self.endpoint, headers=headers, params=params) as response:
-                if response.status != 200:
-                    error_text = await response.text()
-                    logger.error(f"Tavily API error: {response.status} - {error_text}")
-                    return f"[Search error: Tavily API returned status {response.status}]"
+        # Use the base class method to make the API request
+        data, error = await self._make_api_request(self.endpoint, headers, params, query)
+        if error:
+            return error
 
-                data = await response.json()
-                return self._format_results(data, query)
-        except Exception as e:
-            logger.error(f"Error in Tavily search: {str(e)}")
-            return f"[Search error: {str(e)}]"
-        finally:
-            # Ensure the session is always closed, even if an exception occurs
-            if session is not None:
-                try:
-                    await session.close()
-                    logger.debug(f"Closed aiohttp session for Tavily search: {query}")
-                except Exception as e:
-                    logger.error(f"Error closing Tavily search session: {str(e)}")
+        # Format the results
+        return self._format_results(data, query)
 
     def _format_results(self, data: Dict[str, Any], query: str, max_chars: int = 8000) -> str:
         """Format the search results into a readable string with size limits.
@@ -417,50 +336,18 @@ class TavilySearchTool:
         if not results:
             return f"No results found for query: {query}"
 
-        # Combine all results
-        header = f"Search results for '{query}':\n\n"
-        truncation_notice = "\n[Note: Search results were truncated due to size limits]"
-
-        # Ensure the final result respects the max_chars limit
-        if truncated:
-            # Include the truncation notice
-            result_text = header + "\n".join(results) + truncation_notice
-
-            # If still too long, truncate more
-            if len(result_text) > max_chars:
-                available_space = max_chars - len(header) - len(truncation_notice)
-                if available_space > 0:
-                    joined_results = "\n".join(results)
-                    result_text = header + joined_results[:available_space] + truncation_notice
-                else:
-                    # Extreme case: even the header + notice is too long
-                    result_text = (header + truncation_notice)[:max_chars]
-        else:
-            # No truncation needed
-            result_text = header + "\n".join(results)
-
-            # Final check to ensure we don't exceed max_chars
-            if len(result_text) > max_chars:
-                truncated = True
-                available_space = max_chars - len(header) - len(truncation_notice)
-                if available_space > 0:
-                    joined_results = "\n".join(results)
-                    result_text = header + joined_results[:available_space] + truncation_notice
-                else:
-                    # Extreme case: even the header + notice is too long
-                    result_text = (header + truncation_notice)[:max_chars]
-
-        return result_text
+        # Use the base class method to format the results
+        return self._format_search_results(results, query, truncated, max_chars=max_chars)
 
 
 # Factory function to get the appropriate search tool based on available API keys
 def get_search_tool():
     """Get the best available search tool based on available API keys."""
     # Prioritize Serper over Tavily since we're having issues with Tavily
-    if os.environ.get("SERPER_API_KEY"):
+    if EnvironmentConfig.get_serper_api_key():
         logger.info("Using Serper search tool")
         return SerperSearchTool()
-    elif os.environ.get("TAVILY_API_KEY"):
+    elif EnvironmentConfig.get_tavily_api_key():
         logger.info("Using Tavily search tool")
         return TavilySearchTool()
     else:

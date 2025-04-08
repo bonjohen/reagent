@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+import traceback
 from typing import Optional
 
 from rich.console import Console
@@ -175,12 +176,20 @@ class ResearchManager:
                     if session_data and session_data.get("status") == "completed" and "report" in session_data:
                         # Restore report from saved session
                         report_dict = session_data["report"]
-                        report = ReportData.model_validate(report_dict)
-                        self.printer.update_item(
-                            "writing",
-                            "Restored report from previous session",
-                            is_done=True,
-                        )
+
+                        # Check if the report has an error message
+                        if "short_summary" in report_dict and "Error" in report_dict["short_summary"]:
+                            # This is an error report, generate a new one instead
+                            print(f"Found error report in saved session, generating a new report")
+                            report = await self._write_report(query, search_results)
+                        else:
+                            # This is a valid report, use it
+                            report = ReportData.model_validate(report_dict)
+                            self.printer.update_item(
+                                "writing",
+                                "Restored report from previous session",
+                                is_done=True,
+                            )
                     else:
                         # Generate a new report
                         report = await self._write_report(query, search_results)
@@ -533,8 +542,73 @@ class ResearchManager:
         """
         self.printer.update_item("writing", "Thinking about report...")
 
+        # Validate search results before proceeding
+        if not search_results:
+            self.printer.update_item(
+                "warning",
+                "No search results available. Cannot generate report.",
+                is_done=True,
+            )
+            print("WARNING: No search results available. Cannot generate report.")
+
+            # Create a fallback report with an error message
+            fallback_data = {
+                "short_summary": f"ERROR: Failed to generate report for '{query}' (no search results)",
+                "markdown_report": f"# {query.title()}\n\nUnable to generate a report because no search results were available. Please try again with a different query or check your internet connection.\n\n## Technical Details\n\nThe search process did not return any results. This could be due to:\n\n- Network connectivity issues\n- Search API limitations or errors\n- Very specific or niche query with no matching results\n\nPlease try again with a broader or more common query.",
+                "follow_up_questions": [
+                    "Would you like to try a different search query?",
+                    "Are you looking for information on a specific aspect of this topic?",
+                    "Would you like to try a more general search term?"
+                ]
+            }
+            return ReportData.model_validate(fallback_data)
+
+        # Validate each search result is a string
+        validated_results = []
+        for i, result in enumerate(search_results):
+            if result is None:
+                print(f"WARNING: Search result {i} is None, skipping")
+                continue
+
+            if not isinstance(result, str):
+                print(f"WARNING: Search result {i} is not a string, converting to string: {type(result)}")
+                try:
+                    result = str(result)
+                except Exception as e:
+                    print(f"ERROR: Failed to convert search result {i} to string: {e}")
+                    continue
+
+            if not result.strip():
+                print(f"WARNING: Search result {i} is empty or whitespace, skipping")
+                continue
+
+            validated_results.append(result)
+
+        if not validated_results:
+            self.printer.update_item(
+                "warning",
+                "All search results were invalid. Cannot generate report.",
+                is_done=True,
+            )
+            print("WARNING: All search results were invalid. Cannot generate report.")
+
+            # Create a fallback report with an error message
+            fallback_data = {
+                "short_summary": f"ERROR: Failed to generate report for '{query}' (invalid search results)",
+                "markdown_report": f"# {query.title()}\n\nUnable to generate a report because all search results were invalid. Please try again with a different query.\n\n## Technical Details\n\nThe search process returned {len(search_results)} results, but all were invalid (empty, None, or not convertible to string).\n\nPlease try again with a different query.",
+                "follow_up_questions": [
+                    "Would you like to try a different search query?",
+                    "Are you looking for information on a specific aspect of this topic?",
+                    "Would you like to try a more general search term?"
+                ]
+            }
+            return ReportData.model_validate(fallback_data)
+
+        # Format the search results in a more structured way
+        formatted_results = "\n\n".join([f"Search Result {i+1}:\n{result}" for i, result in enumerate(validated_results)])
+
         # Regular report generation with API calls
-        input = f"Original query: {query}\nSummarized search results: {search_results}"
+        input = f"Original query: {query}\n\nNumber of search results: {len(validated_results)}\n\nSummarized search results:\n{formatted_results}"
 
         # Set a timeout for the report generation
         timeout_seconds = 300  # 5 minutes timeout for report generation
@@ -641,18 +715,78 @@ class ResearchManager:
                 # Check if result has a stream method
                 if hasattr(result, 'stream'):
                     print(f"[DEBUG] [{model_name}] Result has stream method, processing stream events")
-                    for event in result.stream():
-                        print(f"[DEBUG] [{model_name}] Stream event type: {type(event)}")
+                    # Initialize final_output to None explicitly
+                    final_output = None
+                    event_count = 0
+                    accumulated_content = ""
 
-                        if hasattr(event, 'delta') and event.delta is not None:
-                            print(f"[DEBUG] [{model_name}] Event has delta: {event.delta}")
-                            # Process delta if needed
-                            pass
+                    # Debug the result object
+                    result_attrs = [attr for attr in dir(result) if not attr.startswith('_')]
+                    print(f"[DEBUG] [{model_name}] Result attributes: {result_attrs}")
 
-                        if hasattr(event, 'final_output') and event.final_output is not None:
-                            print(f"[DEBUG] [{model_name}] Event has final_output: {type(event.final_output)}")
-                            final_output = event.final_output
-                            break
+                    # Check if result has a final_output attribute
+                    if hasattr(result, 'final_output'):
+                        print(f"[DEBUG] [{model_name}] Result has final_output attribute: {result.final_output}")
+                    else:
+                        print(f"[DEBUG] [{model_name}] Result does not have final_output attribute")
+
+                    # Check if result has a message attribute
+                    if hasattr(result, 'message'):
+                        print(f"[DEBUG] [{model_name}] Result has message attribute: {result.message}")
+                    else:
+                        print(f"[DEBUG] [{model_name}] Result does not have message attribute")
+
+                    # Process the stream events
+                    try:
+                        for event in result.stream():
+                            event_count += 1
+                            print(f"[DEBUG] [{model_name}] Stream event #{event_count}, type: {type(event)}")
+
+                            # Debug the event attributes
+                            event_attrs = [attr for attr in dir(event) if not attr.startswith('_')]
+                            print(f"[DEBUG] [{model_name}] Event attributes: {event_attrs}")
+
+                            if hasattr(event, 'delta') and event.delta is not None:
+                                print(f"[DEBUG] [{model_name}] Event has delta: {event.delta}")
+                                # Accumulate content from deltas
+                                if hasattr(event.delta, 'content') and event.delta.content is not None:
+                                    accumulated_content += event.delta.content
+                                    print(f"[DEBUG] [{model_name}] Accumulated content length: {len(accumulated_content)}")
+
+                            if hasattr(event, 'final_output') and event.final_output is not None:
+                                print(f"[DEBUG] [{model_name}] Event has final_output: {type(event.final_output)}")
+                                final_output = event.final_output
+                                print(f"[DEBUG] [{model_name}] Final output set to: {str(final_output)[:100]}..." if len(str(final_output)) > 100 else f"[DEBUG] [{model_name}] Final output set to: {str(final_output)}")
+                                break
+                    except Exception as e:
+                        print(f"[DEBUG] [{model_name}] Error processing stream events: {str(e)}")
+                        print(f"[DEBUG] [{model_name}] Error type: {type(e)}")
+                        print(f"[DEBUG] [{model_name}] Error traceback: {traceback.format_exc()}")
+
+                    print(f"[DEBUG] [{model_name}] Processed {event_count} stream events")
+                    if final_output is None:
+                        print(f"[DEBUG] [{model_name}] No event had a non-None final_output")
+
+                        # If we have accumulated content, try to use it
+                        if accumulated_content:
+                            print(f"[DEBUG] [{model_name}] Using accumulated content as final output")
+                            print(f"[DEBUG] [{model_name}] Accumulated content preview: {accumulated_content[:200]}..." if len(accumulated_content) > 200 else f"[DEBUG] [{model_name}] Accumulated content: {accumulated_content}")
+
+                            # Try to parse the accumulated content as JSON
+                            try:
+                                import json
+                                # Check if the accumulated content is valid JSON
+                                if accumulated_content.strip().startswith('{') and accumulated_content.strip().endswith('}'):
+                                    # Parse the JSON to validate it, but we don't need to use the result
+                                    _ = json.loads(accumulated_content)
+                                    print(f"[DEBUG] [{model_name}] Successfully parsed accumulated content as JSON")
+                                    final_output = accumulated_content
+                                else:
+                                    print(f"[DEBUG] [{model_name}] Accumulated content is not valid JSON")
+                                    final_output = None
+                            except json.JSONDecodeError as e:
+                                print(f"[DEBUG] [{model_name}] Failed to parse accumulated content as JSON: {str(e)}")
+                                final_output = None
                 # If not, check if it has a final_output attribute directly
                 elif hasattr(result, 'final_output'):
                     print(f"[DEBUG] [{model_name}] Result has final_output attribute")
@@ -669,18 +803,94 @@ class ResearchManager:
             # If final_output is None, use a fallback message
             if final_output is None:
                 print(f"[DEBUG] [{model_name}] Final output is None, using fallback message")
-                final_output = {
-                    "short_summary": "Error generating report",
-                    "markdown_report": "# Latest AI Trends\n\nUnable to generate a complete report due to an error in processing the search results. Please try again with a more specific query or check the search results manually.",
+                print(f"[DEBUG] [{model_name}] Query for fallback message: '{query}'")
+
+                # Create a generic fallback message based on the query
+                # Use title case for the title, which capitalizes each word
+                title = ' '.join(word.capitalize() for word in query.strip().split())
+                # Special case for common acronyms like AI, ADHD, etc.
+                for acronym in ['Ai', 'Adhd', 'Ml', 'Nlp', 'Vr', 'Ar']:
+                    title = title.replace(acronym, acronym.upper())
+                print(f"[DEBUG] [{model_name}] Fallback title: '{title}'")
+
+                # Add more detailed error information
+                error_reason = "unknown error"
+
+                # Check if we have any accumulated content
+                if 'accumulated_content' in locals() and accumulated_content:
+                    content_preview = accumulated_content[:200] + "..." if len(accumulated_content) > 200 else accumulated_content
+                    print(f"[DEBUG] [{model_name}] Accumulated content available: {len(accumulated_content)} characters")
+                    print(f"[DEBUG] [{model_name}] Content preview: {content_preview}")
+                    error_reason = "incomplete or malformed response"
+                else:
+                    print(f"[DEBUG] [{model_name}] No accumulated content available")
+                    error_reason = "no response received"
+
+                # Check if we have any search results
+                if search_results and len(search_results) > 0:
+                    print(f"[DEBUG] [{model_name}] Search results available: {len(search_results)} results")
+                    error_reason = f"failed to process {len(search_results)} search results"
+                else:
+                    print(f"[DEBUG] [{model_name}] No search results available")
+                    error_reason = "no search results available"
+
+                print(f"[DEBUG] [{model_name}] Error reason: {error_reason}")
+
+                # Get exception information if available
+                exception_info = ""
+                if 'e' in locals() and e is not None:
+                    exception_type = type(e).__name__
+                    exception_message = str(e)
+                    exception_info = f"\n\n## Exception Details\n\n- **Type**: {exception_type}\n- **Message**: {exception_message}\n"
+
+                    # Add traceback if available
+                    try:
+                        import traceback
+                        tb = traceback.format_exc()
+                        exception_info += f"\n\n### Traceback\n\n```\n{tb}\n```\n"
+                    except Exception as tb_err:
+                        exception_info += f"\n\nFailed to get traceback: {str(tb_err)}"
+
+                # Add information about accumulated content if available
+                content_info = ""
+                if 'accumulated_content' in locals() and accumulated_content:
+                    content_preview = accumulated_content[:500] + "..." if len(accumulated_content) > 500 else accumulated_content
+                    content_info = f"\n\n## Accumulated Content Preview\n\n```\n{content_preview}\n```\n"
+
+                # Add information about search results if available
+                search_info = ""
+                if search_results and len(search_results) > 0:
+                    search_count = len(search_results)
+                    # Include the full raw search results data for debugging
+                    search_preview = str(search_results[:3]) + "..." if len(search_results) > 3 else str(search_results)
+
+                    # Create a more detailed section with the raw data
+                    search_info = f"\n\n## Search Results\n\n- **Count**: {search_count}\n- **Preview**: {search_preview}\n\n### Raw Search Results Data\n\n```\n{str(search_results)}\n```\n"
+
+                # Create a more detailed error title
+                error_title = f"ERROR: Failed to generate report for '{query}'"
+
+                # Create a more detailed error message
+                error_message = f"Unable to generate a complete report due to an error in processing the search results: {error_reason}.\n\n"
+                error_message += "This is a technical error in the report generation process. The search results were retrieved successfully, "
+                error_message += "but there was an error when trying to generate the final report from these results.\n\n"
+                error_message += "The raw search results data is included below for debugging purposes. "
+                error_message += "Please try again with a more specific query or check the search results manually."
+
+                fallback_data = {
+                    "short_summary": error_title,
+                    "markdown_report": f"# {title}\n\n{error_message}{exception_info}{content_info}{search_info}",
                     "follow_up_questions": [
-                        "What specific aspect of AI trends are you interested in?",
-                        "Would you like to focus on a particular industry's AI adoption?",
-                        "Are you interested in research advancements or commercial applications?"
+                        f"What specific aspect of {title} are you interested in?",
+                        f"Would you like more information about a particular part of {title}?",
+                        f"Are there any specific brands or types of {title} you want to learn about?"
                     ]
                 }
-                # Convert the dictionary to a JSON string
-                import json
-                final_output = json.dumps(final_output)
+
+                # Create a ReportData object directly instead of converting to JSON
+                print(f"[DEBUG] [{model_name}] Creating ReportData object directly from fallback data")
+                print(f"[DEBUG] [{model_name}] Fallback markdown_report: '{fallback_data['markdown_report']}'")
+                return ReportData.model_validate(fallback_data)
 
             # Cancel the progress update task
             progress_task.cancel()
@@ -695,6 +905,12 @@ class ResearchManager:
             # Log the final output for debugging
             print(f"\n[DEBUG] [{model_name}] Stream completed successfully")
             print(f"[DEBUG] [{model_name}] Final output type: {type(final_output)}")
+
+            # If final_output is already a ReportData object, return it directly
+            if isinstance(final_output, ReportData):
+                return final_output
+
+            # Otherwise, convert to string and parse
             final_output_str = str(final_output)
             print(f"[DEBUG] [{model_name}] Final output length: {len(final_output_str)}")
             print(f"[DEBUG] [{model_name}] Final output preview: {final_output_str[:200]}..." if len(final_output_str) > 200 else f"[DEBUG] [{model_name}] Final output: {final_output_str}")
