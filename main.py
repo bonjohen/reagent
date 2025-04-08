@@ -2,9 +2,13 @@ import asyncio
 import os
 import argparse
 import sys
+import logging
+
+# Configure logging first to suppress unwanted messages
+from research_agent.logging_config import configure_logging
+configure_logging()
 
 # Get environment variables directly from the system
-
 from research_agent.manager import ResearchManager
 from research_agent.persistence import ResearchPersistence
 
