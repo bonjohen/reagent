@@ -109,19 +109,21 @@
 - **Recurrence** Initial Incident
 - **Test**: Added tests in tests/test_api_key_validation.py to verify key validation logic
 
-## 16. Incomplete Error Recovery [PENDING 04-07-2025]
+## 16. Incomplete Error Recovery [FIXED 04-07-2025]
 - **Location**: research_agent/manager.py
-- **Bug**: Search tasks are cancelled but their resources might not be properly released
-- **Fix**: Implement proper cleanup handlers for cancelled tasks
-- **Impact**: Prevents resource leaks when searches are cancelled
+- **Bug**: Search tasks are cancelled but their resources might not be properly released, and non-string results cause type errors
+- **Fix**: Improved error handling to ensure all tasks are properly cancelled and results are always strings
+- **Impact**: Prevents resource leaks, hanging processes, and type errors in search results
 - **Recurrence** Initial Incident
+- **Test**: Added tests in tests/test_search_error_handling.py to verify error handling
 
-## 17. Unhandled Encoding Issues [PENDING 04-07-2025]
-- **Location**: research_agent/manager.py
-- **Bug**: No handling of text encoding issues in search results
-- **Fix**: Add proper encoding handling and sanitization of search results
-- **Impact**: Prevents crashes when processing non-UTF8 search results
+## 17. Unhandled Encoding Issues [FIXED 04-07-2025]
+- **Location**: research_agent/tools/search_tools.py
+- **Bug**: No handling of text encoding issues and type mismatches in search results
+- **Fix**: Added comprehensive type checking and validation in search tools
+- **Impact**: Prevents crashes when search results contain unexpected data types or non-UTF-8 characters
 - **Recurrence** Initial Incident
+- **Test**: Added tests in tests/test_improved_search_tools.py to verify error handling
 
 ## 18. Race Condition in Search Rate Limiting [PENDING 04-07-2025]
 - **Location**: research_agent/manager.py

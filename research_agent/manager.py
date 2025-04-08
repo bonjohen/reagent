@@ -326,16 +326,30 @@ class ResearchManager:
                     try:
                         result = await task
                         if result is not None:
-                            results.append(result)
+                            # Ensure result is a string
+                            if not isinstance(result, str):
+                                error_msg = f"[Search error: sequence item 0: expected str instance, {type(result).__name__} found]"
+                                self.printer.update_item(
+                                    "error",
+                                    f"Error in search result format: {error_msg}",
+                                    is_done=True,
+                                )
+                                # Convert to string representation
+                                results.append(error_msg)
+                            else:
+                                results.append(result)
                     except asyncio.CancelledError:
                         # Task was cancelled, just skip it
                         pass
                     except Exception as e:
+                        error_msg = f"[Search error: {str(e)}]"
                         self.printer.update_item(
                             "error",
                             f"Error in search task: {str(e)}",
                             is_done=True,
                         )
+                        # Add error message to results
+                        results.append(error_msg)
 
                     num_completed += 1
                     self.printer.update_item(
@@ -357,7 +371,7 @@ class ResearchManager:
 
             return results
 
-    async def _search(self, item: WebSearchItem) -> str | None:
+    async def _search(self, item: WebSearchItem) -> str:
         """
         Execute a single search and summarize the results.
 
@@ -365,7 +379,7 @@ class ResearchManager:
             item: The search item containing query and rationale
 
         Returns:
-            A summary of the search results, or None if the search failed
+            A summary of the search results as a string, or an error message if the search failed
         """
         # Limit query length to prevent excessive resource usage
         max_query_length = 200

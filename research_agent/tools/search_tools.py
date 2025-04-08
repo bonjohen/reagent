@@ -95,16 +95,33 @@ class SerperSearchTool:
         Returns:
             A formatted string with search results, truncated if necessary
         """
+        # Validate that data is a dictionary
+        if not isinstance(data, dict):
+            logger.error(f"Serper API returned non-dictionary data: {type(data).__name__}")
+            return f"[Search error: Serper API returned non-dictionary data: {type(data).__name__}]"
+
         results = []
         total_length = 0
         truncated = False
 
         # Add organic results
-        if "organic" in data:
+        if "organic" in data and isinstance(data["organic"], list):
             for item in data["organic"]:
+                if not isinstance(item, dict):
+                    logger.warning(f"Skipping non-dictionary item in organic results: {type(item).__name__}")
+                    continue
+
                 title = item.get("title", "No title")
                 link = item.get("link", "")
                 snippet = item.get("snippet", "No description available")
+
+                # Ensure all fields are strings
+                if not isinstance(title, str):
+                    title = str(title)
+                if not isinstance(link, str):
+                    link = str(link)
+                if not isinstance(snippet, str):
+                    snippet = str(snippet)
 
                 # Limit the length of individual fields
                 if len(title) > 100:
@@ -121,41 +138,68 @@ class SerperSearchTool:
 
                 results.append(result_item)
                 total_length += len(result_item)
+        elif "organic" in data and not isinstance(data["organic"], list):
+            logger.error(f"Serper API returned non-list organic results: {type(data['organic']).__name__}")
+            results.append(f"[Error: Serper API returned non-list organic results: {type(data['organic']).__name__}]")
+            total_length += len(results[-1])
 
         # Add knowledge graph if available
         if "knowledgeGraph" in data and not truncated:
             kg = data["knowledgeGraph"]
-            title = kg.get("title", "")
-            description = kg.get("description", "")
 
-            # Limit the length of title and description
-            if len(title) > 100:
-                title = title[:97] + "..."
-            if len(description) > 300:
-                description = description[:297] + "..."
+            # Validate that knowledge graph is a dictionary
+            if not isinstance(kg, dict):
+                logger.warning(f"Skipping non-dictionary knowledge graph: {type(kg).__name__}")
+            else:
+                title = kg.get("title", "")
+                description = kg.get("description", "")
 
-            if title and description:
-                kg_text = f"Knowledge Graph: {title} - {description}\n"
+                # Ensure fields are strings
+                if not isinstance(title, str):
+                    title = str(title)
+                if not isinstance(description, str):
+                    description = str(description)
 
-                # Check if adding knowledge graph would exceed the limit
-                if total_length + len(kg_text) <= max_chars:
-                    results.append(kg_text)
-                    total_length += len(kg_text)
-                else:
-                    truncated = True
+                # Limit the length of title and description
+                if len(title) > 100:
+                    title = title[:97] + "..."
+                if len(description) > 300:
+                    description = description[:297] + "..."
+
+                if title and description:
+                    kg_text = f"Knowledge Graph: {title} - {description}\n"
+
+                    # Check if adding knowledge graph would exceed the limit
+                    if total_length + len(kg_text) <= max_chars:
+                        results.append(kg_text)
+                        total_length += len(kg_text)
+                    else:
+                        truncated = True
 
         # Add related searches if available
-        if "relatedSearches" in data and data["relatedSearches"] and not truncated:
-            # Limit the number of related searches
-            related_searches = data["relatedSearches"][:5]  # Maximum 5 related searches
-            related = "Related searches: " + ", ".join(related_searches) + "\n"
+        if "relatedSearches" in data and not truncated:
+            related_searches = data["relatedSearches"]
 
-            # Check if adding related searches would exceed the limit
-            if total_length + len(related) <= max_chars:
-                results.append(related)
-                total_length += len(related)
-            else:
-                truncated = True
+            # Validate that related searches is a list
+            if not isinstance(related_searches, list):
+                logger.warning(f"Skipping non-list related searches: {type(related_searches).__name__}")
+            elif related_searches:  # Only process if the list is not empty
+                # Ensure all items are strings and limit to 5 items
+                valid_searches = []
+                for search in related_searches[:5]:  # Maximum 5 related searches
+                    if not isinstance(search, str):
+                        search = str(search)
+                    valid_searches.append(search)
+
+                if valid_searches:
+                    related = "Related searches: " + ", ".join(valid_searches) + "\n"
+
+                    # Check if adding related searches would exceed the limit
+                    if total_length + len(related) <= max_chars:
+                        results.append(related)
+                        total_length += len(related)
+                    else:
+                        truncated = True
 
         # If no results found
         if not results:
@@ -266,6 +310,11 @@ class TavilySearchTool:
         Returns:
             A formatted string with search results, truncated if necessary
         """
+        # Validate that data is a dictionary
+        if not isinstance(data, dict):
+            logger.error(f"Tavily API returned non-dictionary data: {type(data).__name__}")
+            return f"[Search error: Tavily API returned non-dictionary data: {type(data).__name__}]"
+
         results = []
         total_length = 0
         truncated = False
@@ -277,42 +326,70 @@ class TavilySearchTool:
         effective_max_chars = max_chars - reserved_space
 
         # Add the answer if available
-        if "answer" in data and data["answer"] and effective_max_chars > 0:
+        if "answer" in data and effective_max_chars > 0:
             answer = data["answer"]
-            # Limit answer length based on available space
-            max_answer_length = min(500, effective_max_chars - 20)  # Leave some space for formatting
-            if len(answer) > max_answer_length:
-                answer = answer[:max_answer_length-3] + "..."
 
-            answer_text = f"Summary: {answer}\n"
-            if total_length + len(answer_text) <= effective_max_chars:
-                results.append(answer_text)
-                total_length += len(answer_text)
-            else:
-                truncated = True
+            # Ensure answer is a string
+            if not isinstance(answer, str):
+                logger.warning(f"Converting non-string answer to string: {type(answer).__name__}")
+                answer = str(answer)
+
+            if answer:  # Only process if answer is not empty
+                # Limit answer length based on available space
+                max_answer_length = min(500, effective_max_chars - 20)  # Leave some space for formatting
+                if len(answer) > max_answer_length:
+                    answer = answer[:max_answer_length-3] + "..."
+
+                answer_text = f"Summary: {answer}\n"
+                if total_length + len(answer_text) <= effective_max_chars:
+                    results.append(answer_text)
+                    total_length += len(answer_text)
+                else:
+                    truncated = True
 
         # Add search results
         if "results" in data:
-            for item in data["results"]:
-                title = item.get("title", "No title")
-                url = item.get("url", "")
-                content = item.get("content", "No content available")
+            results_data = data["results"]
 
-                # Limit the length of individual fields
-                if len(title) > 100:
-                    title = title[:97] + "..."
-                if len(content) > 300:
-                    content = content[:297] + "..."
+            # Validate that results is a list
+            if not isinstance(results_data, list):
+                logger.warning(f"Skipping non-list results: {type(results_data).__name__}")
+                results.append(f"[Error: Tavily API returned non-list results: {type(results_data).__name__}]")
+                total_length += len(results[-1])
+            else:
+                for item in results_data:
+                    # Validate that item is a dictionary
+                    if not isinstance(item, dict):
+                        logger.warning(f"Skipping non-dictionary result item: {type(item).__name__}")
+                        continue
 
-                result_item = f"Title: {title}\nURL: {url}\nContent: {content}\n"
+                    title = item.get("title", "No title")
+                    url = item.get("url", "")
+                    content = item.get("content", "No content available")
 
-                # Check if adding this item would exceed the max_chars limit
-                if total_length + len(result_item) > max_chars:
-                    truncated = True
-                    break
+                    # Ensure all fields are strings
+                    if not isinstance(title, str):
+                        title = str(title)
+                    if not isinstance(url, str):
+                        url = str(url)
+                    if not isinstance(content, str):
+                        content = str(content)
 
-                results.append(result_item)
-                total_length += len(result_item)
+                    # Limit the length of individual fields
+                    if len(title) > 100:
+                        title = title[:97] + "..."
+                    if len(content) > 300:
+                        content = content[:297] + "..."
+
+                    result_item = f"Title: {title}\nURL: {url}\nContent: {content}\n"
+
+                    # Check if adding this item would exceed the max_chars limit
+                    if total_length + len(result_item) > max_chars:
+                        truncated = True
+                        break
+
+                    results.append(result_item)
+                    total_length += len(result_item)
 
         # If no results found
         if not results:
