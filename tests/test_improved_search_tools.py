@@ -5,7 +5,7 @@ Tests for the improved search tools with robust error handling.
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 import json
-from research_agent.tools.search_tools import SerperSearchTool, TavilySearchTool
+from reagents.tools.search_tools import SerperSearchTool, TavilySearchTool
 
 @pytest.mark.asyncio
 async def test_serper_search_with_invalid_data():

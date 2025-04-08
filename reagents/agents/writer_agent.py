@@ -11,7 +11,7 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, model_validator
 
 from agents import Agent
-from research_agent.config import ModelConfig
+from reagents.config import ModelConfig
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -34,16 +34,25 @@ Follow these guidelines:
 7. Focus on the most relevant and recent information
 8. Identify any gaps or limitations in the available information
 
-Your output should be in the following JSON format:
-```json
+Your output MUST be in the following JSON format:
 {
     "short_summary": "A brief 1-2 sentence summary of the report",
     "markdown_report": "The full report in markdown format",
     "follow_up_questions": ["3-5 questions for further research"]
 }
-```
 
-Make sure your JSON is properly formatted and valid.
+CRITICAL INSTRUCTIONS:
+1. Your response must be a valid JSON object with the exact fields shown above
+2. Do not include any text outside of the JSON object
+3. Do not include any markdown code blocks, backticks, or other formatting around the JSON
+4. The entire response should be a valid JSON object that can be parsed directly
+5. Do not include any explanations or notes outside the JSON structure
+6. Make sure all quotes and brackets are properly balanced
+7. The markdown_report field should contain properly formatted markdown
+8. follow_up_questions must be an array of strings
+
+Example of correct response format:
+{"short_summary":"This is a summary.","markdown_report":"# Title\n\nContent here.","follow_up_questions":["Question 1?","Question 2?","Question 3?"]}
 """
 
 class ReportData(BaseModel):
@@ -74,9 +83,37 @@ class ReportData(BaseModel):
             A ReportData object
         """
         try:
-            # Extract JSON from the response if it's wrapped in ```json blocks
-            logger.debug(f"[{model}] Response length: {len(response)}")
+            # Check if response is None or empty
+            if response is None:
+                logger.debug(f"[{model}] Response is None")
+                raise ValueError("Response is None")
 
+            if not response.strip():
+                logger.debug(f"[{model}] Response is empty or whitespace")
+                raise ValueError("Response is empty or whitespace")
+
+            # Log response details
+            logger.debug(f"[{model}] Response length: {len(response)}")
+            logger.debug(f"[{model}] Response preview: {response[:200]}..." if len(response) > 200 else f"[{model}] Response: {response}")
+
+            # First, check if the response is already a valid JSON object
+            stripped_response = response.strip()
+            if stripped_response.startswith('{') and stripped_response.endswith('}'):
+                logger.debug(f"[{model}] Response appears to be a JSON object, trying direct parsing")
+                try:
+                    # Try to parse it directly
+                    data = json.loads(stripped_response)
+                    logger.debug(f"[{model}] Direct JSON parsing successful")
+
+                    # Check if it has the required fields
+                    if all(field in data for field in ["short_summary", "markdown_report", "follow_up_questions"]):
+                        logger.debug(f"[{model}] JSON has all required fields")
+                        data["model"] = model
+                        return cls.model_validate(data)
+                except json.JSONDecodeError:
+                    logger.debug(f"[{model}] Direct JSON parsing failed, continuing with extraction")
+
+            # Extract JSON from the response if it's wrapped in ```json blocks
             json_match = re.search(r'```(?:json)?\s*(.*?)```', response, re.DOTALL)
             if json_match:
                 logger.debug(f"[{model}] Found ```json code block")
@@ -91,13 +128,49 @@ class ReportData(BaseModel):
             json_str = json_str.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
             logger.debug(f"[{model}] After handling escapes, JSON length: {len(json_str)}")
 
-            # Use the new extraction method to parse the JSON
+            # Use the extraction method to parse the JSON
             logger.debug(f"[{model}] Extracting fields from JSON")
             data = cls._extract_json_fields(json_str, model)
 
-            # If extraction failed, raise an error
+            # If extraction failed, try to create a report from the raw content
             if data is None:
-                raise ValueError("Failed to extract required fields from JSON")
+                logger.debug(f"[{model}] Field extraction failed, trying to create report from raw content")
+
+                # Try to find a title in the content
+                title_match = re.search(r'#\s*(.*?)\n', response)
+                if title_match:
+                    title = title_match.group(1).strip()
+                    logger.debug(f"[{model}] Found title: {title}")
+                else:
+                    title = "Research Report"
+                    logger.debug(f"[{model}] No title found, using default: {title}")
+
+                # Create a short summary from the title
+                short_summary = f"Report on {title}"
+
+                # Check if the response looks like markdown
+                if re.search(r'#\s+', response) or re.search(r'\*\*.*?\*\*', response) or re.search(r'\n-\s+', response):
+                    logger.debug(f"[{model}] Response appears to be markdown, using as markdown_report")
+                    markdown_report = response
+                else:
+                    logger.debug(f"[{model}] Response does not appear to be markdown, wrapping in markdown")
+                    markdown_report = f"# {title}\n\n{response}"
+
+                # Use default follow-up questions
+                follow_up_questions = [
+                    "What additional information would you like about this topic?",
+                    "Are there specific aspects of this topic you want to explore further?",
+                    "Would you like more details about any particular section?",
+                    "Are there related topics you would like to research?",
+                    "Do you have any questions about the information presented?"
+                ]
+
+                data = {
+                    "short_summary": short_summary,
+                    "markdown_report": markdown_report,
+                    "follow_up_questions": follow_up_questions
+                }
+                logger.debug(f"[{model}] Created report from raw content")
 
             # Validate required fields
             logger.debug(f"[{model}] Validating required fields")
@@ -355,14 +428,83 @@ class ReportData(BaseModel):
             A dictionary containing the extracted fields, or None if extraction failed
         """
         logger.debug(f"[{model}] Extracting fields from JSON string")
+        logger.debug(f"[{model}] JSON string length: {len(json_str)}")
+        logger.debug(f"[{model}] JSON string preview: {json_str[:200]}..." if len(json_str) > 200 else f"[{model}] JSON string: {json_str}")
+
+        # Check if the string is empty or just whitespace
+        if not json_str or not json_str.strip():
+            logger.debug(f"[{model}] JSON string is empty or whitespace")
+            return None
+
+        # Check if the string looks like JSON (starts with { or [)
+        stripped = json_str.strip()
+        if not (stripped.startswith('{') or stripped.startswith('[')):
+            logger.debug(f"[{model}] JSON string doesn't start with {{ or [, trying to find JSON in the text")
+            # Try to find JSON-like content in the string
+            json_start = json_str.find('{')
+            if json_start == -1:
+                logger.debug(f"[{model}] No {{ found in the string")
+                # No JSON object found, try to extract fields directly
+                pass
+            else:
+                # Try to find the matching closing brace
+                brace_count = 0
+                in_quotes = False
+                escape_next = False
+                json_end = -1
+
+                for i in range(json_start, len(json_str)):
+                    char = json_str[i]
+
+                    if escape_next:
+                        escape_next = False
+                    elif char == '\\':
+                        escape_next = True
+                    elif char == '"' and not escape_next:
+                        in_quotes = not in_quotes
+                    elif not in_quotes:
+                        if char == '{':
+                            brace_count += 1
+                        elif char == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                json_end = i + 1
+                                break
+
+                if json_end != -1:
+                    logger.debug(f"[{model}] Found potential JSON object from index {json_start} to {json_end}")
+                    json_str = json_str[json_start:json_end]
+                    logger.debug(f"[{model}] Extracted JSON: {json_str[:200]}..." if len(json_str) > 200 else f"[{model}] Extracted JSON: {json_str}")
 
         # Try standard JSON parsing first
         try:
             data = json.loads(json_str)
             logger.debug(f"[{model}] Standard JSON parsing successful")
+
+            # Validate required fields
+            if "short_summary" not in data:
+                logger.debug(f"[{model}] Missing short_summary field in parsed JSON")
+                data["short_summary"] = "Summary not provided"
+
+            if "markdown_report" not in data:
+                logger.debug(f"[{model}] Missing markdown_report field in parsed JSON")
+                data["markdown_report"] = "Report content not provided"
+
+            if "follow_up_questions" not in data or not data["follow_up_questions"]:
+                logger.debug(f"[{model}] Missing or empty follow_up_questions field in parsed JSON")
+                data["follow_up_questions"] = [
+                    "What additional information would you like about this topic?",
+                    "Are there specific aspects of this topic you want to explore further?",
+                    "Would you like more details about any particular section?",
+                    "Are there related topics you would like to research?",
+                    "Do you have any questions about the information presented?"
+                ]
+
             return data
         except json.JSONDecodeError as json_err:
             logger.debug(f"[{model}] JSON decode error: {str(json_err)}")
+            logger.debug(f"[{model}] Error position: {json_err.pos}, line: {json_err.lineno}, column: {json_err.colno}")
+            logger.debug(f"[{model}] JSON snippet at error: {json_str[max(0, json_err.pos-50):min(len(json_str), json_err.pos+50)]}")
 
             # Try to fix common JSON formatting issues
             logger.debug(f"[{model}] Attempting to repair JSON")
@@ -371,6 +513,26 @@ class ReportData(BaseModel):
             try:
                 data = json.loads(fixed_json_str)
                 logger.debug(f"[{model}] Repaired JSON parsed successfully")
+
+                # Validate required fields
+                if "short_summary" not in data:
+                    logger.debug(f"[{model}] Missing short_summary field in repaired JSON")
+                    data["short_summary"] = "Summary not provided"
+
+                if "markdown_report" not in data:
+                    logger.debug(f"[{model}] Missing markdown_report field in repaired JSON")
+                    data["markdown_report"] = "Report content not provided"
+
+                if "follow_up_questions" not in data or not data["follow_up_questions"]:
+                    logger.debug(f"[{model}] Missing or empty follow_up_questions field in repaired JSON")
+                    data["follow_up_questions"] = [
+                        "What additional information would you like about this topic?",
+                        "Are there specific aspects of this topic you want to explore further?",
+                        "Would you like more details about any particular section?",
+                        "Are there related topics you would like to research?",
+                        "Do you have any questions about the information presented?"
+                    ]
+
                 return data
             except json.JSONDecodeError:
                 logger.debug(f"[{model}] Repair failed, trying field-by-field extraction")
@@ -381,9 +543,30 @@ class ReportData(BaseModel):
                 markdown_report = cls._extract_json_field(json_str, "markdown_report")
                 logger.debug(f"[{model}] Extracted markdown_report: {markdown_report}")
                 follow_up_questions = cls._extract_json_field(json_str, "follow_up_questions")
+                logger.debug(f"[{model}] Extracted follow_up_questions: {follow_up_questions}")
 
-                # If we couldn't extract follow_up_questions, use default ones
-                if follow_up_questions is None and short_summary is not None and markdown_report is not None:
+                # If we couldn't extract any fields, try to create them from the content
+                if short_summary is None and markdown_report is None and follow_up_questions is None:
+                    logger.debug(f"[{model}] Could not extract any fields, trying to create them from content")
+
+                    # Try to find a title in the content
+                    title_match = re.search(r'#\s*(.*?)\n', json_str)
+                    if title_match:
+                        title = title_match.group(1).strip()
+                        logger.debug(f"[{model}] Found title: {title}")
+                    else:
+                        title = "Research Report"
+                        logger.debug(f"[{model}] No title found, using default: {title}")
+
+                    # Use the entire content as the markdown report
+                    markdown_report = json_str
+                    logger.debug(f"[{model}] Using entire content as markdown_report")
+
+                    # Create a short summary from the title
+                    short_summary = f"Report on {title}"
+                    logger.debug(f"[{model}] Created short_summary: {short_summary}")
+
+                    # Use default follow-up questions
                     follow_up_questions = [
                         "What additional information would you like about this topic?",
                         "Are there specific aspects of this topic you want to explore further?",
@@ -391,17 +574,57 @@ class ReportData(BaseModel):
                         "Are there related topics you would like to research?",
                         "Do you have any questions about the information presented?"
                     ]
+                    logger.debug(f"[{model}] Using default follow_up_questions")
 
-                # Check if we extracted all required fields
-                if short_summary is not None and markdown_report is not None and follow_up_questions is not None:
-                    logger.debug(f"[{model}] Field-by-field extraction successful")
                     return {
                         "short_summary": short_summary,
                         "markdown_report": markdown_report,
                         "follow_up_questions": follow_up_questions
                     }
+
+                # If we couldn't extract follow_up_questions, use default ones
+                if follow_up_questions is None and (short_summary is not None or markdown_report is not None):
+                    follow_up_questions = [
+                        "What additional information would you like about this topic?",
+                        "Are there specific aspects of this topic you want to explore further?",
+                        "Would you like more details about any particular section?",
+                        "Are there related topics you would like to research?",
+                        "Do you have any questions about the information presented?"
+                    ]
+                    logger.debug(f"[{model}] Using default follow_up_questions")
+
+                # If we couldn't extract short_summary but have markdown_report, create one
+                if short_summary is None and markdown_report is not None:
+                    # Try to find a title in the markdown report
+                    title_match = re.search(r'#\s*(.*?)\n', markdown_report)
+                    if title_match:
+                        title = title_match.group(1).strip()
+                        short_summary = f"Report on {title}"
+                    else:
+                        short_summary = "Research Report"
+                    logger.debug(f"[{model}] Created short_summary: {short_summary}")
+
+                # If we couldn't extract markdown_report but have short_summary, create one
+                if markdown_report is None and short_summary is not None:
+                    markdown_report = f"# {short_summary}\n\nNo detailed report content available."
+                    logger.debug(f"[{model}] Created markdown_report from short_summary")
+
+                # Check if we have at least the minimum required fields
+                if short_summary is not None and markdown_report is not None:
+                    logger.debug(f"[{model}] Field-by-field extraction partially successful")
+                    return {
+                        "short_summary": short_summary,
+                        "markdown_report": markdown_report,
+                        "follow_up_questions": follow_up_questions or [
+                            "What additional information would you like about this topic?",
+                            "Are there specific aspects of this topic you want to explore further?",
+                            "Would you like more details about any particular section?",
+                            "Are there related topics you would like to research?",
+                            "Do you have any questions about the information presented?"
+                        ]
+                    }
                 else:
-                    logger.debug(f"[{model}] Field-by-field extraction failed")
+                    logger.debug(f"[{model}] Field-by-field extraction failed completely")
                     return None
 
 # Create the writer agent with a valid model name

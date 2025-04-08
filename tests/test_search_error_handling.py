@@ -5,8 +5,8 @@ Tests for search error handling in the research manager.
 import pytest
 import asyncio
 from unittest.mock import patch, MagicMock, AsyncMock
-from research_agent.manager import ResearchManager
-from research_agent.agents.planner_agent import WebSearchItem
+from reagents.manager import ResearchManager
+from reagents.agents.planner_agent import WebSearchItem
 
 @pytest.mark.asyncio
 async def test_search_with_non_string_result():

@@ -9,16 +9,16 @@ from rich.console import Console
 
 from agents import Runner, custom_span, gen_trace_id, trace
 
-from research_agent.agents.planner_agent import WebSearchItem, WebSearchPlan, planner_agent
-from research_agent.agents.search_agent import search_agent
-from research_agent.agents.writer_agent import ReportData, writer_agent
-from research_agent.printer import Printer
-from research_agent.error_utils import format_error
-from research_agent.persistence import ResearchPersistence
+from reagents.agents.planner_agent import WebSearchItem, WebSearchPlan, planner_agent
+from reagents.agents.search_agent import search_agent
+from reagents.agents.writer_agent import ReportData, writer_agent
+from reagents.printer import Printer
+from reagents.error_utils import format_error
+from reagents.persistence import ResearchPersistence
 
 # Import custom search tools
 try:
-    from research_agent.tools.search_tools import get_search_tool
+    from reagents.tools.search_tools import get_search_tool
     custom_search_tool = get_search_tool()
     print(f"Using custom search tool: {custom_search_tool.__class__.__name__ if custom_search_tool else 'None'}")
 except ImportError:
@@ -452,7 +452,8 @@ class ResearchManager:
             if custom_search_tool:
                 try:
                     # Use our custom search tool
-                    print(f"Using custom search tool for query: {item.query}")
+                    tool_name = custom_search_tool.__class__.__name__
+                    print(f"Using {tool_name} for query: {item.query}")
                     search_task = asyncio.create_task(custom_search_tool.search(item.query))
 
                     # Wait for the task to complete with a timeout

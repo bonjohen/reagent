@@ -4,8 +4,8 @@ Tests for the truncation notification functionality in the research manager.
 
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
-from research_agent.manager import ResearchManager
-from research_agent.agents.planner_agent import WebSearchItem
+from reagents.manager import ResearchManager
+from reagents.agents.planner_agent import WebSearchItem
 
 @pytest.mark.asyncio
 async def test_query_truncation_notification():
@@ -26,7 +26,7 @@ async def test_query_truncation_notification():
     mock_search_tool.search = AsyncMock(return_value="Test search result")
 
     # Patch the custom_search_tool
-    with patch('research_agent.manager.custom_search_tool', mock_search_tool):
+    with patch('reagents.manager.custom_search_tool', mock_search_tool):
         # Call the _search method
         result = await manager._search(search_item)
 
@@ -62,7 +62,7 @@ async def test_reason_truncation_notification():
     mock_search_tool.search = AsyncMock(return_value="Test search result")
 
     # Patch the custom_search_tool
-    with patch('research_agent.manager.custom_search_tool', mock_search_tool):
+    with patch('reagents.manager.custom_search_tool', mock_search_tool):
         # Call the _search method
         result = await manager._search(search_item)
 
@@ -97,7 +97,7 @@ async def test_search_result_truncation_notification():
     mock_search_tool.search = AsyncMock(return_value="a" * 6000)  # 6000 characters, which exceeds the 5000 character limit
 
     # Patch the custom_search_tool
-    with patch('research_agent.manager.custom_search_tool', mock_search_tool):
+    with patch('reagents.manager.custom_search_tool', mock_search_tool):
         # Call the _search method
         result = await manager._search(search_item)
 

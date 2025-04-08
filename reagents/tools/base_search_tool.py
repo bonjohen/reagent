@@ -6,7 +6,7 @@ import logging
 import aiohttp
 from typing import Dict, Any, List, Optional, Tuple
 
-from research_agent.config import AppConstants
+from reagents.config import AppConstants
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -25,7 +25,7 @@ class BaseSearchTool:
         self.api_name = api_name
         self.endpoint = ""  # To be set by subclasses
 
-    def _validate_api_key(self, min_length: int = 20, prefix: Optional[str] = None, 
+    def _validate_api_key(self, min_length: int = 20, prefix: Optional[str] = None,
                          check_alphanumeric: bool = True) -> None:
         """Common API key validation logic.
 
@@ -36,22 +36,22 @@ class BaseSearchTool:
         """
         if not self.api_key:
             return
-            
+
         # Check for proper prefix if specified
         if prefix and not self.api_key.startswith(prefix):
             logger.warning(f"{self.api_name} API key does not start with '{prefix}' prefix - this may cause issues")
-            
+
         # Check for minimum length
         if len(self.api_key) < min_length:
             logger.warning(f"{self.api_name} API key appears to be too short: {len(self.api_key)} chars")
-            
+
         # Check for valid characters
         if check_alphanumeric:
             key_body = self.api_key[len(prefix):] if prefix and self.api_key.startswith(prefix) else self.api_key
             if not key_body.isalnum():
                 logger.warning(f"{self.api_name} API key contains invalid characters - this may cause issues")
-                
-    async def _make_api_request(self, endpoint: str, headers: Dict[str, str], 
+
+    async def _make_api_request(self, endpoint: str, headers: Dict[str, str],
                                params: Dict[str, Any], query: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         """Common API request logic with error handling.
 
@@ -70,13 +70,15 @@ class BaseSearchTool:
         session = None
         try:
             logger.info(f"Performing {self.api_name} search for: {query}")
+            # Also log to console for better visibility
+            print(f"Performing {self.api_name} search for: {query}")
             session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AppConstants.API_TIMEOUT_SECONDS))
             async with session.post(endpoint, headers=headers, json=params) as response:
                 if response.status != 200:
                     error_text = await response.text()
                     logger.error(f"{self.api_name} API error: {response.status} - {error_text}")
                     return None, f"[Search for '{query}' failed: API returned status {response.status}]"
-                
+
                 data = await response.json()
                 return data, None
         except Exception as e:
@@ -86,8 +88,8 @@ class BaseSearchTool:
             # Ensure the session is closed
             if session and not session.closed:
                 await session.close()
-                
-    def _format_search_results(self, results: List[str], query: str, 
+
+    def _format_search_results(self, results: List[str], query: str,
                               truncated: bool = False, max_chars: int = 8000) -> str:
         """Common search result formatting logic.
 
@@ -102,17 +104,17 @@ class BaseSearchTool:
         """
         if not results:
             return f"No results found for query: {query}"
-            
+
         header = f"Search results for '{query}':\n\n"
         truncation_notice = "\n[Note: Search results were truncated due to size limits]"
-        
+
         # Basic formatting
         result_text = header + "\n".join(results)
-        
+
         # Add truncation notice if needed
         if truncated:
             result_text += truncation_notice
-            
+
         # Ensure we don't exceed max_chars
         if len(result_text) > max_chars:
             available_space = max_chars - len(header) - len(truncation_notice)
@@ -121,5 +123,5 @@ class BaseSearchTool:
                 result_text = header + joined_results[:available_space] + truncation_notice
             else:
                 result_text = (header + truncation_notice)[:max_chars]
-                
+
         return result_text

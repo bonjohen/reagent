@@ -3,8 +3,8 @@ Logging configuration for the research agent.
 """
 
 import logging
-from research_agent.logging_filter import apply_filters
-from research_agent.config import initialize_app
+from reagents.logging_filter import apply_filters
+from reagents.config import initialize_app
 
 def configure_logging():
     """Configure logging for the research agent."""

@@ -5,7 +5,7 @@ from agents import Agent, WebSearchTool
 from agents.model_settings import ModelSettings
 
 # Import centralized configuration
-from research_agent.config import ModelConfig
+from reagents.config import ModelConfig
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

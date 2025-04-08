@@ -4,7 +4,7 @@ Tests for the writer agent.
 
 import json
 import pytest
-from research_agent.agents.writer_agent import ReportData
+from reagents.agents.writer_agent import ReportData
 
 def test_report_data_from_valid_json():
     """Test that ReportData.from_response correctly parses valid JSON."""

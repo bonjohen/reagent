@@ -129,8 +129,8 @@ If you've provided a Serper API key or Tavily API key, the Research Agent will u
 
 You can customize the research process by modifying the configuration files:
 
-- `research_agent/config.py`: Contains configuration settings for models and other parameters
-- `research_agent/agents/*.py`: Contains the agent implementations that can be customized
+- `reagents/config.py`: Contains configuration settings for models and other parameters
+- `reagents/agents/*.py`: Contains the agent implementations that can be customized
 
 ## Troubleshooting
 

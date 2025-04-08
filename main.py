@@ -4,13 +4,13 @@ import argparse
 from typing import Optional
 
 # Configure logging first to suppress unwanted messages
-from research_agent.logging_config import configure_logging
+from reagents.logging_config import configure_logging
 configure_logging()
 
 # Import project modules
-from research_agent.manager import ResearchManager
-from research_agent.persistence import ResearchPersistence
-from research_agent.config import EnvironmentConfig
+from reagents.manager import ResearchManager
+from reagents.persistence import ResearchPersistence
+from reagents.config import EnvironmentConfig
 
 # Get API keys from the centralized config
 openai_api_key = EnvironmentConfig.get_openai_api_key()

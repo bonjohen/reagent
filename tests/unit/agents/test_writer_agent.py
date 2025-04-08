@@ -5,7 +5,7 @@ import pytest
 import json
 from unittest.mock import patch
 
-from research_agent.agents.writer_agent import ReportData
+from reagents.agents.writer_agent import ReportData
 
 
 class TestWriterAgent:

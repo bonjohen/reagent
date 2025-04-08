@@ -5,8 +5,8 @@ Tests for the search rate limiting functionality in the research manager.
 import pytest
 import asyncio
 from unittest.mock import patch, MagicMock, AsyncMock
-from research_agent.manager import ResearchManager
-from research_agent.agents.planner_agent import WebSearchItem, WebSearchPlan
+from reagents.manager import ResearchManager
+from reagents.agents.planner_agent import WebSearchItem, WebSearchPlan
 
 @pytest.mark.asyncio
 async def test_rate_limited_search_delay_before_semaphore():

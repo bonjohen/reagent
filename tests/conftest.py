@@ -7,8 +7,8 @@ import tempfile
 import json
 from unittest.mock import MagicMock, patch
 
-from research_agent.agents.planner_agent import WebSearchItem, WebSearchPlan
-from research_agent.agents.writer_agent import ReportData
+from reagents.agents.planner_agent import WebSearchItem, WebSearchPlan
+from reagents.agents.writer_agent import ReportData
 
 
 @pytest.fixture

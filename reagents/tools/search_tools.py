@@ -6,8 +6,8 @@ These provide more reliable search functionality than the default WebSearchTool.
 import logging
 from typing import Optional, Dict, Any
 
-from research_agent.config import EnvironmentConfig, AppConstants
-from research_agent.tools.base_search_tool import BaseSearchTool
+from reagents.config import EnvironmentConfig, AppConstants
+from reagents.tools.base_search_tool import BaseSearchTool
 
 # Set up logging
 logger = logging.getLogger(__name__)

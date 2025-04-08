@@ -6,7 +6,7 @@ import json
 import re
 from unittest.mock import patch
 
-from research_agent.agents.planner_agent import WebSearchItem, WebSearchPlan
+from reagents.agents.planner_agent import WebSearchItem, WebSearchPlan
 
 
 class TestPlannerAgent:

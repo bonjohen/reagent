@@ -142,7 +142,7 @@ This guide provides solutions to common issues you might encounter when using th
 
 To enable more detailed logging:
 
-1. Edit `research_agent/logging_config.py`
+1. Edit `reagents/logging_config.py`
 2. Change the logging level from `INFO` to `DEBUG`
 3. Run your research session again to see more detailed logs
 

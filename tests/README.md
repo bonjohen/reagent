@@ -6,7 +6,7 @@ This directory contains tests for the Research Agent application.
 
 - `unit/`: Unit tests for individual components
   - `agents/`: Tests for agent modules
-  - `research_agent/`: Tests for core research agent modules
+  - `reagents/`: Tests for core reagents modules
 - `conftest.py`: Common test fixtures and configuration
 
 ## Running Tests
@@ -20,19 +20,19 @@ pytest
 To run tests with coverage report:
 
 ```bash
-pytest --cov=research_agent --cov=main --cov-report=term-missing
+pytest --cov=reagents --cov=main --cov-report=term-missing
 ```
 
 To run a specific test file:
 
 ```bash
-pytest tests/unit/research_agent/test_persistence.py
+pytest tests/unit/reagents/test_persistence.py
 ```
 
 To run a specific test:
 
 ```bash
-pytest tests/unit/research_agent/test_persistence.py::TestResearchPersistence::test_save_search_plan
+pytest tests/unit/reagents/test_persistence.py::TestResearchPersistence::test_save_search_plan
 ```
 
 ## Test Dependencies

@@ -4,7 +4,7 @@ Tests for the search tools with size limits.
 
 import pytest
 from unittest.mock import patch, MagicMock
-from research_agent.tools.search_tools import SerperSearchTool, TavilySearchTool
+from reagents.tools.search_tools import SerperSearchTool, TavilySearchTool
 
 def test_serper_format_results_with_size_limits():
     """Test that SerperSearchTool._format_results respects size limits."""

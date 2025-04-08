@@ -3,7 +3,7 @@ Tests for the JSON error recovery functionality in the planner agent.
 """
 
 import pytest
-from research_agent.agents.planner_agent import WebSearchPlan
+from reagents.agents.planner_agent import WebSearchPlan
 
 def test_fallback_plan_preserves_query_intent():
     """Test that the fallback plan preserves the original query intent."""

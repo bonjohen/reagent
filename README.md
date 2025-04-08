@@ -104,7 +104,7 @@ These agents are orchestrated by the `ResearchManager` class, which handles the 
 
 ```
 .
-├── research_agent/       # Main application code
+├── reagents/            # Main application code
 │   ├── agents/           # Agent implementations
 │   │   ├── planner_agent.py
 │   │   ├── search_agent.py

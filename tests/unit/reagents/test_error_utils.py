@@ -2,7 +2,7 @@
 Unit tests for the error_utils module.
 """
 import pytest
-from research_agent.error_utils import format_error
+from reagents.error_utils import format_error
 
 
 class TestErrorUtils:
@@ -16,7 +16,7 @@ class TestErrorUtils:
         except Exception as e:
             # Format the error
             error_message = format_error(e, context="Test context")
-            
+
             # Check the formatted message
             assert "Test context" in error_message
             assert "ValueError" in error_message
@@ -30,7 +30,7 @@ class TestErrorUtils:
         except Exception as e:
             # Format the error without context
             error_message = format_error(e)
-            
+
             # Check the formatted message
             assert "Error" in error_message
             assert "RuntimeError" in error_message
@@ -48,7 +48,7 @@ class TestErrorUtils:
         except Exception as e:
             # Format the error
             error_message = format_error(e, context="Nested test")
-            
+
             # Check the formatted message
             assert "Nested test" in error_message
             assert "RuntimeError" in error_message

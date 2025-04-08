@@ -7,7 +7,7 @@ import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
-from research_agent.config import AppConstants
+from reagents.config import AppConstants
 
 # Set up logging
 logger = logging.getLogger(__name__)

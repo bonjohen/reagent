@@ -4,7 +4,7 @@ Tests for proper session cleanup in search tools.
 
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
-from research_agent.tools.search_tools import SerperSearchTool, TavilySearchTool
+from reagents.tools.search_tools import SerperSearchTool, TavilySearchTool
 
 @pytest.mark.asyncio
 async def test_serper_search_session_cleanup_on_success():
