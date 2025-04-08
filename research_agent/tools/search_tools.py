@@ -9,6 +9,8 @@ import aiohttp
 import logging
 from typing import Optional, Dict, Any, List
 
+from research_agent.config import EnvironmentConfig, AppConstants
+
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -22,7 +24,7 @@ class SerperSearchTool:
         Args:
             api_key: Serper API key. If not provided, will try to get from environment.
         """
-        self.api_key = api_key or os.environ.get("SERPER_API_KEY")
+        self.api_key = api_key or EnvironmentConfig.get_serper_api_key()
         self.endpoint = "https://google.serper.dev/search"
 
         # Validate API key format
@@ -43,9 +45,9 @@ class SerperSearchTool:
 
         # Check for valid characters (alphanumeric)
         if not self.api_key.isalnum():
-            logger.warning("Serper API key contains non-alphanumeric characters")
+            logger.warning("Serper API key contains non-alphanumeric characters - this may cause issues")
 
-    async def search(self, query: str, num_results: int = 5) -> str:
+    async def search(self, query: str, num_results: int = AppConstants.MAX_SEARCH_RESULTS) -> str:
         """Perform a search using the Serper API.
 
         Args:
@@ -56,7 +58,7 @@ class SerperSearchTool:
             A string containing the search results
         """
         if not self.api_key:
-            logger.warning("Serper API key not found. Search functionality will be limited.")
+            logger.error("Serper API key not found. Search functionality will be limited.")
             return f"[Search for '{query}' failed: No Serper API key provided]"
 
         headers = {
@@ -73,7 +75,7 @@ class SerperSearchTool:
         session = None
         try:
             logger.info(f"Performing Serper search for: {query}")
-            session = aiohttp.ClientSession()
+            session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AppConstants.API_TIMEOUT_SECONDS))
             async with session.post(self.endpoint, headers=headers, json=payload) as response:
                 if response.status != 200:
                     error_text = await response.text()
@@ -159,7 +161,7 @@ class SerperSearchTool:
 
             # Validate that knowledge graph is a dictionary
             if not isinstance(kg, dict):
-                logger.warning(f"Skipping non-dictionary knowledge graph: {type(kg).__name__}")
+                logger.debug(f"Skipping non-dictionary knowledge graph: {type(kg).__name__}")
             else:
                 title = kg.get("title", "")
                 description = kg.get("description", "")
@@ -235,7 +237,7 @@ class TavilySearchTool:
         Args:
             api_key: Tavily API key. If not provided, will try to get from environment.
         """
-        self.api_key = api_key or os.environ.get("TAVILY_API_KEY")
+        self.api_key = api_key or EnvironmentConfig.get_tavily_api_key()
         self.endpoint = "https://api.tavily.com/search"
 
         # Validate API key format
@@ -252,18 +254,18 @@ class TavilySearchTool:
 
         # Check for proper prefix
         if not self.api_key.startswith("tvly-"):
-            logger.warning("Tavily API key does not start with 'tvly-' prefix")
+            logger.warning("Tavily API key does not start with 'tvly-' prefix - this may cause issues")
 
         # Check for minimum length
         if len(self.api_key) < 20:  # Tavily keys are typically longer
-            logger.warning(f"Tavily API key appears to be too short: {len(self.api_key)} chars")
+            logger.warning(f"Tavily API key appears to be too short: {len(self.api_key)} chars - this may cause issues")
 
         # Check for valid characters after prefix
         key_body = self.api_key[5:] if self.api_key.startswith("tvly-") else self.api_key
         if not key_body.isalnum():
-            logger.warning("Tavily API key contains invalid characters")
+            logger.warning("Tavily API key contains invalid characters - this may cause issues")
 
-    async def search(self, query: str, search_depth: str = "basic", max_results: int = 5) -> str:
+    async def search(self, query: str, search_depth: str = AppConstants.MAX_SEARCH_DEPTH, max_results: int = AppConstants.MAX_SEARCH_RESULTS) -> str:
         """Perform a search using the Tavily API.
 
         Args:
@@ -275,7 +277,7 @@ class TavilySearchTool:
             A string containing the search results
         """
         if not self.api_key:
-            logger.warning("Tavily API key not found. Search functionality will be limited.")
+            logger.error("Tavily API key not found. Search functionality will be limited.")
             return f"[Search for '{query}' failed: No Tavily API key provided]"
 
         # Set up headers with API key
@@ -298,7 +300,7 @@ class TavilySearchTool:
         session = None
         try:
             logger.info(f"Performing Tavily search for: {query}")
-            session = aiohttp.ClientSession()
+            session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AppConstants.API_TIMEOUT_SECONDS))
             async with session.get(self.endpoint, headers=headers, params=params) as response:
                 if response.status != 200:
                     error_text = await response.text()

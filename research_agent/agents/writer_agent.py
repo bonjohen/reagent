@@ -11,13 +11,14 @@ from typing import List, Optional
 from pydantic import BaseModel, Field, model_validator
 
 from agents import Agent
+from research_agent.config import ModelConfig
 
 # Set up logging
 logger = logging.getLogger(__name__)
 
 # Constants
-WRITER_MODEL = "gpt-3.5-turbo"
-FALLBACK_MODEL = "gpt-3.5-turbo-0125"  # Fallback model if primary is unavailable
+WRITER_MODEL = ModelConfig.WRITER_MODEL
+FALLBACK_MODEL = ModelConfig.WRITER_FALLBACK_MODEL
 
 # Prompt for the writer agent
 PROMPT = """
@@ -226,54 +227,59 @@ class ReportData(BaseModel):
     
     @staticmethod
     def _attempt_json_repair(json_str: str) -> str:
-        """Attempt to repair common JSON formatting issues."""
+        """Attempt to repair common JSON formatting issues.
+        
+        This method applies a series of transformations to fix common JSON formatting issues:
+        1. Adds missing follow_up_questions field if needed
+        2. Fixes quote issues (single vs double quotes)
+        3. Fixes unquoted keys
+        4. Removes trailing commas
+        5. Adds quotes around unquoted string values
+        6. Removes control characters
+        
+        Args:
+            json_str: The JSON string to repair
+            
+        Returns:
+            The repaired JSON string
+        """
         # First, check if the JSON is missing the follow_up_questions field
         if '"markdown_report"' in json_str and '"follow_up_questions"' not in json_str:
             # Add default follow_up_questions before the closing brace
             if json_str.rstrip().endswith('}'):
-                json_str = json_str.rstrip()[:-1] + ',\n    "follow_up_questions": [\n        "What are the most recent developments in this field?",\n        "How might these findings impact related industries?",\n        "What ethical considerations should be taken into account?",\n        "What are the limitations of the current research?",\n        "What future research directions seem most promising?"\n    ]\n}'
+                default_questions = ',\n    "follow_up_questions": [\n'
+                default_questions += '        "What are the most recent developments in this field?",\n'
+                default_questions += '        "How might these findings impact related industries?",\n'
+                default_questions += '        "What ethical considerations should be taken into account?",\n'
+                default_questions += '        "What are the limitations of the current research?",\n'
+                default_questions += '        "What future research directions seem most promising?"\n'
+                default_questions += '    ]\n}'
+                
+                json_str = json_str.rstrip()[:-1] + default_questions
         
-        # First, normalize all newlines to \\n
-        # Replace all actual newlines within string values with escaped newlines
-        lines = json_str.split('\n')
-        in_string = False
-        processed_lines = []
+        # Apply a series of regex replacements to fix common issues
+        # These are ordered from most specific to most general
         
-        for line in lines:
-            processed_line = ""
-            i = 0
-            while i < len(line):
-                char = line[i]
-                if char == '"' and (i == 0 or line[i-1] != '\\'):
-                    in_string = not in_string
-                processed_line += char
-                i += 1
-            
-            if in_string:
-                # If we're inside a string, add an escaped newline
-                processed_lines.append(processed_line + "\\n")
-            else:
-                # If we're not inside a string, add a normal newline
-                processed_lines.append(processed_line)
-        
-        # Rejoin without newlines (they're now escaped)
-        repaired = ''.join(processed_lines)
-        
-        # Apply standard JSON repairs
-        # Replace single quotes with double quotes (common mistake)
-        repaired = re.sub(r"'([^']*)'\s*:", r'"\1":', repaired)
+        # 1. Replace single quotes with double quotes for keys
+        repaired = re.sub(r"'([^']*)'\s*:", r'"\1":', json_str)
 
-        # Fix unquoted keys
+        # 2. Fix unquoted keys
         repaired = re.sub(r"([{,])\s*(\w+)\s*:", r'\1"\2":', repaired)
 
-        # Fix trailing commas in arrays/objects
+        # 3. Fix trailing commas in arrays/objects
         repaired = re.sub(r',\s*([\]}])', r'\1', repaired)
 
-        # Fix missing quotes around string values
+        # 4. Fix missing quotes around string values
         repaired = re.sub(r':\s*([^\s\d"\'{\[\]}][^,\]}]*)', r':"\1"', repaired)
 
-        # Remove control characters (ASCII control characters from 0-31 except tabs and newlines)
+        # 5. Remove control characters (ASCII control characters from 0-31 except tabs and newlines)
         repaired = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F]', '', repaired)
+        
+        # 6. Handle escaped newlines consistently
+        repaired = repaired.replace('\\n', '\n').replace('\\r', '\n')
+        
+        # 7. Handle escaped quotes consistently
+        repaired = repaired.replace('\\"', '"')
         
         return repaired
 

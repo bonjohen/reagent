@@ -7,6 +7,8 @@ including model names, fallback options, and initialization functions.
 
 import logging
 import importlib.util
+import os
+from typing import Optional
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -94,6 +96,54 @@ def disable_openai_tracing():
     except Exception as e:
         logger.error(f"Error disabling OpenAI tracing: {str(e)}")
         return False
+
+
+# Application constants
+class AppConstants:
+    """Application-wide constants."""
+
+    # File paths and directories
+    DEFAULT_DATA_DIR = "research_data"
+
+    # API limits
+    MAX_SEARCH_RESULTS = 10
+    MAX_SEARCH_DEPTH = "advanced"  # Can be "basic" or "advanced"
+
+    # Content limits
+    MAX_REPORT_LENGTH = 10000  # Maximum length of a report in characters
+    MAX_SEARCH_RESULT_LENGTH = 8000  # Maximum combined length of search results
+
+    # Timeouts
+    API_TIMEOUT_SECONDS = 30  # Timeout for API calls
+
+    # Retry configuration
+    MAX_RETRIES = 3  # Maximum number of retries for API calls
+    RETRY_DELAY_SECONDS = 2  # Delay between retries
+
+
+# Environment variable configuration
+class EnvironmentConfig:
+    """Centralized access to environment variables."""
+
+    @staticmethod
+    def get_openai_api_key() -> Optional[str]:
+        """Get the OpenAI API key from environment variables."""
+        return os.environ.get("OPENAI_API_KEY")
+
+    @staticmethod
+    def get_serper_api_key() -> Optional[str]:
+        """Get the Serper API key from environment variables."""
+        return os.environ.get("SERPER_API_KEY")
+
+    @staticmethod
+    def get_tavily_api_key() -> Optional[str]:
+        """Get the Tavily API key from environment variables."""
+        return os.environ.get("TAVILY_API_KEY")
+
+    @staticmethod
+    def has_search_api_keys() -> bool:
+        """Check if any search API keys are available."""
+        return bool(EnvironmentConfig.get_serper_api_key() or EnvironmentConfig.get_tavily_api_key())
 
 
 def initialize_app():

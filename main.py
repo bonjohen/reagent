@@ -1,23 +1,21 @@
 import asyncio
 import os
 import argparse
-import sys
-import logging
+from typing import Optional
 
 # Configure logging first to suppress unwanted messages
 from research_agent.logging_config import configure_logging
 configure_logging()
 
-# Get environment variables directly from the system
+# Import project modules
 from research_agent.manager import ResearchManager
 from research_agent.persistence import ResearchPersistence
+from research_agent.config import EnvironmentConfig
 
-# Get the OpenAI API key directly from environment variables
-openai_api_key = os.environ.get("OPENAI_API_KEY")
-
-# Get search API keys
-serper_api_key = os.environ.get("SERPER_API_KEY")
-tavily_api_key = os.environ.get("TAVILY_API_KEY")
+# Get API keys from the centralized config
+openai_api_key = EnvironmentConfig.get_openai_api_key()
+serper_api_key = EnvironmentConfig.get_serper_api_key()
+tavily_api_key = EnvironmentConfig.get_tavily_api_key()
 
 import openai
 
@@ -45,7 +43,7 @@ async def validate_openai_api_key(key: str) -> bool:
         print(f"API key validation error: {str(e)}")
         return False
 
-async def check_openai_api_key(openai_api_key):
+async def check_openai_api_key(openai_api_key: Optional[str]) -> bool:
     """Check if the OpenAI API key is valid and exit if invalid."""
     if not openai_api_key:
         print("\nError: OPENAI_API_KEY environment variable is not set.")
@@ -74,7 +72,7 @@ if __name__ == "__main__":
     # We'll check the API key in the main function
     pass
 
-def list_sessions():
+def list_sessions() -> None:
     """List all available research sessions."""
     persistence = ResearchPersistence()
     sessions = persistence.list_sessions()

@@ -3,8 +3,14 @@ import os
 import shutil
 import time
 import random
+import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
+
+from research_agent.config import AppConstants
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 class ResearchPersistence:
     """
@@ -12,7 +18,7 @@ class ResearchPersistence:
     Allows for saving and loading research state to enable resuming interrupted research.
     """
 
-    def __init__(self, data_dir: str = "research_data"):
+    def __init__(self, data_dir: str = AppConstants.DEFAULT_DATA_DIR):
         """
         Initialize the persistence manager.
 
@@ -123,7 +129,16 @@ class ResearchPersistence:
         return os.path.join(self.data_dir, f"{session_id}.json")
 
     def _save_session_data(self, session_id: str, data: Dict[str, Any]) -> None:
-        """Save session data to disk with file locking to prevent race conditions."""
+        """Save session data to disk with file locking to prevent race conditions.
+
+        Args:
+            session_id: The ID of the session to save
+            data: The session data to save
+
+        Raises:
+            IOError: If there was an error writing the file
+            OSError: If there was an error with the file system operations
+        """
         # Get the final path where we want to save the data
         final_path = self._get_session_path(session_id)
 
@@ -137,20 +152,22 @@ class ResearchPersistence:
 
         # Write data to the temporary file first
         try:
-            with open(temp_path, "w") as f:
+            with open(temp_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2)
 
             # Ensure the data is written to disk
             # Note: flush() and fsync() need to be inside the with block
             # since the file is still open there
-        except Exception as e:
+        except PermissionError as e:
+            logger.error(f"Permission error writing to temporary file {temp_path}: {str(e)}")
             # Clean up the temporary file if there was an error
-            if os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                except:
-                    pass  # Ignore errors in cleanup
-            raise e
+            self._cleanup_temp_file(temp_path)
+            raise IOError(f"Permission denied when writing session data: {str(e)}") from e
+        except Exception as e:
+            logger.error(f"Error writing session data to temporary file {temp_path}: {str(e)}")
+            # Clean up the temporary file if there was an error
+            self._cleanup_temp_file(temp_path)
+            raise IOError(f"Failed to write session data: {str(e)}") from e
 
         # Atomically replace the target file with the temporary file
         # This is atomic on POSIX systems and nearly atomic on Windows
@@ -160,22 +177,50 @@ class ResearchPersistence:
                 os.replace(temp_path, final_path)  # Atomic on Windows
             else:
                 shutil.move(temp_path, final_path)  # Atomic on POSIX
+        except PermissionError as e:
+            logger.error(f"Permission error moving temporary file {temp_path} to {final_path}: {str(e)}")
+            self._cleanup_temp_file(temp_path)
+            raise IOError(f"Permission denied when saving session data: {str(e)}") from e
         except Exception as e:
-            # Clean up the temporary file if the move failed
-            if os.path.exists(temp_path):
-                try:
-                    os.remove(temp_path)
-                except:
-                    pass  # Ignore errors in cleanup
-            raise e
+            logger.error(f"Error moving temporary file {temp_path} to {final_path}: {str(e)}")
+            self._cleanup_temp_file(temp_path)
+            raise OSError(f"Failed to save session data: {str(e)}") from e
+
+    def _cleanup_temp_file(self, temp_path: str) -> None:
+        """Clean up a temporary file if it exists.
+
+        Args:
+            temp_path: Path to the temporary file to clean up
+        """
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception as e:
+                logger.warning(f"Failed to clean up temporary file {temp_path}: {str(e)}")
+                # We don't re-raise this exception as it's just cleanup
 
     def _load_session_data(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """Load session data from disk."""
+        """Load session data from disk.
+
+        Args:
+            session_id: The ID of the session to load
+
+        Returns:
+            The session data as a dictionary, or None if the file doesn't exist or is invalid
+        """
         path = self._get_session_path(session_id)
-        if os.path.exists(path):
-            try:
-                with open(path, "r") as f:
-                    return json.load(f)
-            except json.JSONDecodeError:
-                return None
-        return None
+        if not os.path.exists(path):
+            return None
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except json.JSONDecodeError as e:
+            logger.error(f"Error decoding JSON in session file {path}: {str(e)}")
+            return None
+        except PermissionError as e:
+            logger.error(f"Permission error accessing session file {path}: {str(e)}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error loading session file {path}: {str(e)}")
+            return None

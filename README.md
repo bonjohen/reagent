@@ -82,8 +82,7 @@ These agents are orchestrated by the `ResearchManager` class, which handles the 
 │   ├── agents/           # Agent implementations
 │   │   ├── planner_agent.py
 │   │   ├── search_agent.py
-│   │   ├── writer_agent.py
-│   │   └── writer_agent_consolidated.py  # Current writer agent implementation
+│   │   └── writer_agent.py             # Writer agent implementation
 │   ├── tools/            # Custom tools used by agents
 │   │   └── search_tools.py
 │   ├── config.py         # Configuration settings and app initialization
