@@ -5,7 +5,7 @@ Tests for the report generation functionality in the research manager.
 import pytest
 from unittest.mock import patch, MagicMock, AsyncMock
 from research_agent.manager import ResearchManager
-from research_agent.agents.writer_agent_consolidated import writer_agent
+from research_agent.agents.writer_agent import writer_agent
 
 @pytest.mark.asyncio
 async def test_write_report_awaits_run_streamed():
@@ -33,7 +33,7 @@ async def test_write_report_awaits_run_streamed():
 
     # Patch the necessary methods
     with patch('agents.Runner.run_streamed', mock_run_streamed), \
-         patch('research_agent.agents.writer_agent_consolidated.ReportData.from_response', mock_from_response):
+         patch('research_agent.agents.writer_agent.ReportData.from_response', mock_from_response):
 
         # Call the _write_report method
         await manager._write_report("test query", ["test search result"])
