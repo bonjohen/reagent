@@ -1,31 +1,49 @@
-# Agent used to synthesize a final report from the individual summaries.
-from pydantic import BaseModel, Field
-import json
+"""Writer agent for generating research reports.
+
+This is a consolidated version of the writer agent that combines the best features
+from writer_agent_updated.py, writer_agent_fixed.py, and writer_agent_improved.py.
+"""
+
 import re
+import json
+import logging
+from typing import List, ClassVar, Optional
+from pydantic import BaseModel, Field, model_validator
 
 from agents import Agent
 
-# Define the model to use
-WRITER_MODEL = "gpt-3.5-turbo"  # Using GPT-3.5-turbo for compatibility
+# Set up logging
+logger = logging.getLogger(__name__)
 
-# Instructions for the writer agent
-PROMPT = (
-    "You are a senior researcher tasked with writing a cohesive report for a research query. "
-    "You will be provided with the original query, and some initial research done by a research "
-    "assistant.\n"
-    "You should first come up with an outline for the report that describes the structure and "
-    "flow of the report. Then, generate the report and return that as your final output.\n"
-    "The final output should be in markdown format, and it should be lengthy and detailed. Aim "
-    "for 5-10 pages of content, at least 1000 words. Include proper citations and references "
-    "when possible. Organize the content with clear headings and subheadings.\n\n"
-    "IMPORTANT: Your final response must be in the following JSON format:\n"
-    "```json\n"
-    "{\"short_summary\": \"A 2-3 sentence summary of findings\", "
-    "\"markdown_report\": \"The full report in markdown format\", "
-    "\"follow_up_questions\": [\"Question 1\", \"Question 2\", \"Question 3\"]}\n"
-    "```\n"
-    "Ensure your response can be parsed as valid JSON. The markdown_report field should contain the full report with proper markdown formatting."
-)
+# Constants
+WRITER_MODEL = "gpt-3.5-turbo"
+FALLBACK_MODEL = "gpt-3.5-turbo-0125"  # Fallback model if primary is unavailable
+
+# Prompt for the writer agent
+PROMPT = """
+You are a research report writer. Your task is to create a comprehensive, well-structured report based on the search results provided.
+
+Follow these guidelines:
+1. Analyze the search results thoroughly to extract key information
+2. Organize the information into a coherent, logical structure
+3. Write in a clear, professional style
+4. Include proper citations or references to the sources
+5. Format the report using markdown for readability
+6. Be objective and balanced in your presentation of information
+7. Focus on the most relevant and recent information
+8. Identify any gaps or limitations in the available information
+
+Your output should be in the following JSON format:
+```json
+{
+    "short_summary": "A brief 1-2 sentence summary of the report",
+    "markdown_report": "The full report in markdown format",
+    "follow_up_questions": ["3-5 questions for further research"]
+}
+```
+
+Make sure your JSON is properly formatted and valid.
+"""
 
 class ReportData(BaseModel):
     """Data structure for the final research report."""

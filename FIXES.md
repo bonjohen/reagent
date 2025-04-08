@@ -77,33 +77,37 @@
 - **Impact**: Prevents memory exhaustion with large results
 - **Recurrence** Initial Incident
 
-## 12. Duplicate Writer Agent Files [PENDING 04-07-2025]
+## 12. Duplicate Writer Agent Files [FIXED 04-07-2025]
 - **Location**: research_agent/agents/writer_agent_improved.py, writer_agent_fixed.py, writer_agent_updated.py
 - **Bug**: Multiple versions of writer agent with identical error handling code, creating maintenance issues
-- **Fix**: Consolidate into a single writer agent file with proper version control
+- **Fix**: Consolidated into a single writer_agent_consolidated.py file with improved error handling and JSON repair
 - **Impact**: Prevents confusion and ensures consistent error handling across the codebase
 - **Recurrence** Initial Incident
+- **Test**: Added comprehensive tests in tests/test_writer_agent_consolidated.py to verify JSON parsing and error handling
 
-## 13. Inconsistent Model Name Usage [PENDING 04-07-2025]
+## 13. Inconsistent Model Name Usage [FIXED 04-07-2025]
 - **Location**: research_agent/agents/search_agent.py
 - **Bug**: Hard-coded model name "gpt-3.5-turbo" in SEARCH_MODEL variable without fallback
-- **Fix**: Move model configuration to centralized config with fallback options
+- **Fix**: Created centralized config.py with ModelConfig class that provides fallback options
 - **Impact**: Prevents failures when specific model versions become deprecated
 - **Recurrence** Initial Incident
+- **Test**: Added comprehensive tests in tests/test_model_config.py to verify model fallback behavior
 
-## 14. Unbounded Search Results [PENDING 04-07-2025]
+## 14. Unbounded Search Results [FIXED 04-07-2025]
 - **Location**: research_agent/tools/search_tools.py
 - **Bug**: No maximum size limit on search results before formatting
-- **Fix**: Implement size limits before API response processing
+- **Fix**: Implemented comprehensive size limits with truncation for both Serper and Tavily search tools
 - **Impact**: Prevents memory issues with unexpectedly large API responses
 - **Recurrence** Initial Incident
+- **Test**: Added tests in tests/test_search_tools.py to verify size limits are respected
 
-## 15. Missing API Key Validation [PENDING 04-07-2025]
+## 15. Missing API Key Validation [FIXED 04-07-2025]
 - **Location**: research_agent/tools/search_tools.py
 - **Bug**: API keys are only checked for existence, not validity format
-- **Fix**: Add proper API key format validation before making API calls
-- **Impact**: Prevents failed API calls due to malformed keys
+- **Fix**: Added comprehensive API key format validation for both Serper and Tavily search tools
+- **Impact**: Prevents failed API calls due to malformed keys and provides early warning
 - **Recurrence** Initial Incident
+- **Test**: Added tests in tests/test_api_key_validation.py to verify key validation logic
 
 ## 16. Incomplete Error Recovery [PENDING 04-07-2025]
 - **Location**: research_agent/manager.py

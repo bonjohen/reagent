@@ -11,7 +11,7 @@ from agents import Runner, custom_span, gen_trace_id, trace
 
 from research_agent.agents.planner_agent import WebSearchItem, WebSearchPlan, planner_agent
 from research_agent.agents.search_agent import search_agent
-from research_agent.agents.writer_agent_improved import ReportData, writer_agent
+from research_agent.agents.writer_agent_consolidated import ReportData, writer_agent
 from research_agent.printer import Printer
 from research_agent.error_utils import format_error
 from research_agent.persistence import ResearchPersistence
