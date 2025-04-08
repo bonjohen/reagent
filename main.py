@@ -89,6 +89,91 @@ def list_sessions() -> None:
     for session in sessions:
         print(f"{session['session_id']:<30} {session['query'][:30]:<30} {session['status']:<10} {session['timestamp'][:19]:<20}")
 
+def display_menu(last_session_id: Optional[str] = None) -> str:
+    """Display the main menu and get the user's choice.
+
+    Args:
+        last_session_id: The ID of the last session that was run, if any
+
+    Returns:
+        The user's menu choice
+    """
+    print("\n" + "=" * 50)
+    print("Research Agent - Main Menu")
+    print("=" * 50)
+
+    if last_session_id:
+        print(f"Last session: {last_session_id}")
+
+    print("\nOptions:")
+    print("  1. Continue with last session (resume)")
+    print("  2. List all research sessions")
+    print("  3. Start a new research session")
+    print("  4. Resume a specific session")
+    print("  5. Exit")
+
+    while True:
+        choice = input("\nEnter your choice (1-5): ").strip()
+        if choice in ["1", "2", "3", "4", "5"]:
+            return choice
+        print("Invalid choice. Please enter a number between 1 and 5.")
+
+async def run_research_session(session_id: Optional[str] = None, query: Optional[str] = None) -> Optional[str]:
+    """Run a research session with the given session ID and query.
+
+    Args:
+        session_id: The ID of the session to resume, if any
+        query: The research query to use for a new session
+
+    Returns:
+        The ID of the session that was run, or None if there was an error
+    """
+    try:
+        # If we have a session ID but no query, get the query from the session data
+        if session_id and not query:
+            persistence = ResearchPersistence()
+            session_data = persistence.get_session_data(session_id)
+
+            if not session_data:
+                print(f"Error: Session {session_id} not found.")
+                return None
+
+            query = session_data.get("query", "")
+            print(f"Resuming research session: {session_id}")
+            print(f"Original query: {query}")
+
+        # If we don't have a session ID, we need a query
+        elif not session_id and not query:
+            # Get a new query from the user
+            query = input("What would you like to research? ")
+
+            # Validate input
+            if not query or query.strip() == "":
+                print("Error: Please provide a non-empty research query.")
+                return None
+
+            # Check for very short or likely invalid queries
+            if len(query.strip()) < 5:
+                print("Error: Query is too short. Please provide a more detailed research query.")
+                return None
+
+            # Check for queries that are just punctuation or special characters
+            if all(not c.isalnum() for c in query.strip()):
+                print("Error: Query must contain at least one letter or number.")
+                return None
+
+            query = query.strip()
+
+        # Create and run the research manager
+        manager = ResearchManager(session_id=session_id)
+        await manager.run(query)
+
+        # Return the session ID that was used or created
+        return manager.session_id
+    except Exception as e:
+        print(f"Error running research session: {str(e)}")
+        return None
+
 async def main() -> None:
     """Main entry point for the research agent application."""
     # Check if the OpenAI API key is valid
@@ -113,56 +198,58 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description="Research Agent powered by OpenAI Agent SDK")
     parser.add_argument("-r", "--resume", help="Resume a previous research session by ID")
     parser.add_argument("-l", "--list", action="store_true", help="List all research sessions")
+    parser.add_argument("-n", "--new", action="store_true", help="Start a new research session")
     args = parser.parse_args()
-
-    # Handle listing sessions
-    if args.list:
-        list_sessions()
-        return
 
     print("Research Agent powered by OpenAI Agent SDK")
     print("------------------------------------------")
 
-    # Handle resuming a session
-    session_id = None
-    query = ""
-
-    if args.resume:
-        session_id = args.resume
-        persistence = ResearchPersistence()
-        session_data = persistence.get_session_data(session_id)
-
-        if not session_data:
-            print(f"Error: Session {session_id} not found.")
+    # If specific command line arguments are provided, run in non-interactive mode
+    if args.list or args.resume or args.new:
+        # Handle listing sessions
+        if args.list:
+            list_sessions()
             return
 
-        query = session_data.get("query", "")
-        print(f"Resuming research session: {session_id}")
-        print(f"Original query: {query}")
-    else:
-        # Get a new query from the user
-        query = input("What would you like to research? ")
-
-        # Validate input
-        if not query or query.strip() == "":
-            print("Error: Please provide a non-empty research query.")
+        # Handle resuming a session
+        if args.resume:
+            await run_research_session(session_id=args.resume)
             return
 
-        # Check for very short or likely invalid queries
-        if len(query.strip()) < 5:
-            print("Error: Query is too short. Please provide a more detailed research query.")
+        # Handle starting a new session
+        if args.new:
+            await run_research_session()
             return
 
-        # Check for queries that are just punctuation or special characters
-        if all(not c.isalnum() for c in query.strip()):
-            print("Error: Query must contain at least one letter or number.")
-            return
+    # Otherwise, run in interactive mode with a menu
+    last_session_id = None
 
-        query = query.strip()
+    while True:
+        choice = display_menu(last_session_id)
 
-    # Create and run the research manager
-    manager = ResearchManager(session_id=session_id)
-    await manager.run(query)
+        if choice == "1":  # Continue with last session
+            if last_session_id:
+                last_session_id = await run_research_session(session_id=last_session_id)
+            else:
+                print("No previous session to continue. Please start a new session.")
+
+        elif choice == "2":  # List all sessions
+            list_sessions()
+
+        elif choice == "3":  # Start a new session
+            last_session_id = await run_research_session()
+
+        elif choice == "4":  # Resume a specific session
+            list_sessions()  # Show available sessions
+            session_id = input("\nEnter the session ID to resume: ").strip()
+            if session_id:
+                last_session_id = await run_research_session(session_id=session_id)
+            else:
+                print("No session ID provided.")
+
+        elif choice == "5":  # Exit
+            print("\nExiting Research Agent. Goodbye!")
+            break
 
 if __name__ == "__main__":
     asyncio.run(main())

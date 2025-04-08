@@ -53,16 +53,42 @@ A Python-based research agent built using the OpenAI Agent SDK. This agent helps
 
 ## Usage
 
-Run the research agent:
+### Interactive Mode (Default)
+
+Run the research agent in interactive mode:
 
 ```
 python main.py
 ```
 
-You will be prompted to enter a research topic. The agent will then:
+This will display a menu with the following options:
+1. Continue with last session (resume)
+2. List all research sessions
+3. Start a new research session
+4. Resume a specific session
+5. Exit
+
+When starting a new session, you will be prompted to enter a research topic. The agent will then:
 1. Plan the research by generating search queries
 2. Execute those searches
 3. Synthesize the results into a comprehensive report
+
+After completing a session, you can continue working with the same session or start a new one.
+
+### Command Line Options
+
+You can also use command line arguments for specific operations:
+
+```
+# List all research sessions
+python main.py -l
+
+# Resume a specific session
+python main.py -r SESSION_ID
+
+# Start a new research session
+python main.py -n
+```
 
 ## Architecture
 

@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-import os
-from typing import Optional, Union
+from typing import Optional
 
 from rich.console import Console
 
@@ -37,7 +36,17 @@ class ResearchManager:
         self.console = Console()
         self.printer = Printer(self.console)
         self.persistence = ResearchPersistence()
-        self.session_id = session_id
+        self._session_id = session_id
+
+    @property
+    def session_id(self) -> Optional[str]:
+        """Get the current session ID."""
+        return self._session_id
+
+    @session_id.setter
+    def session_id(self, value: Optional[str]) -> None:
+        """Set the session ID."""
+        self._session_id = value
 
     async def run(self, query: str) -> None:
         """
@@ -71,12 +80,12 @@ class ResearchManager:
                 # Step 1: Plan the searches
                 try:
                     # Check if we're resuming from a previous session
-                    if self.session_id:
-                        session_data = self.persistence.get_session_data(self.session_id)
+                    if self._session_id:
+                        session_data = self.persistence.get_session_data(self._session_id)
                         if session_data and session_data.get("status") in ["planned", "searched"]:
                             self.printer.update_item(
                                 "resuming",
-                                f"Resuming research from previous session {self.session_id}",
+                                f"Resuming research from previous session {self._session_id}",
                                 is_done=True,
                             )
 
@@ -100,13 +109,13 @@ class ResearchManager:
                         search_plan = await self._plan_searches(query)
 
                         # Save the search plan and get a new session ID
-                        self.session_id = self.persistence.save_search_plan(
+                        self._session_id = self.persistence.save_search_plan(
                             query,
                             search_plan.model_dump()
                         )
                         self.printer.update_item(
                             "session",
-                            f"Created new research session: {self.session_id}",
+                            f"Created new research session: {self._session_id}",
                             is_done=True,
                         )
                 except Exception as e:
@@ -124,7 +133,7 @@ class ResearchManager:
                 # Step 2: Perform the searches
                 try:
                     # Check if we can restore search results from a previous session
-                    session_data = self.persistence.get_session_data(self.session_id)
+                    session_data = self.persistence.get_session_data(self._session_id)
                     if session_data and session_data.get("status") == "searched" and "search_results" in session_data:
                         # Restore search results from saved session
                         search_results = session_data["search_results"]
@@ -138,8 +147,8 @@ class ResearchManager:
                         search_results = await self._perform_searches(search_plan)
 
                         # Save the search results
-                        if self.session_id and search_results:
-                            self.persistence.save_search_results(self.session_id, search_results)
+                        if self._session_id and search_results:
+                            self.persistence.save_search_results(self._session_id, search_results)
 
                     if not search_results:
                         self.printer.update_item(
@@ -162,7 +171,7 @@ class ResearchManager:
                 # Step 3: Write the report
                 try:
                     # Check if we can restore the report from a previous session
-                    session_data = self.persistence.get_session_data(self.session_id)
+                    session_data = self.persistence.get_session_data(self._session_id)
                     if session_data and session_data.get("status") == "completed" and "report" in session_data:
                         # Restore report from saved session
                         report_dict = session_data["report"]
@@ -177,8 +186,8 @@ class ResearchManager:
                         report = await self._write_report(query, search_results)
 
                         # Save the report
-                        if self.session_id:
-                            self.persistence.save_report(self.session_id, report.model_dump())
+                        if self._session_id:
+                            self.persistence.save_report(self._session_id, report.model_dump())
                 except Exception as e:
                     # Sanitize error message to avoid exposing sensitive information
                     error_type = type(e).__name__
@@ -196,10 +205,10 @@ class ResearchManager:
                 self.printer.update_item("final_report", final_report, is_done=True)
 
                 # Display session information
-                if self.session_id:
+                if self._session_id:
                     self.printer.update_item(
                         "session_info",
-                        f"Research session saved: {self.session_id}",
+                        f"Research session saved: {self._session_id}",
                         is_done=True,
                     )
 

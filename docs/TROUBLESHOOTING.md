@@ -106,7 +106,21 @@ This guide provides solutions to common issues you might encounter when using th
 2. Reduce the scope of your research topic
 3. Break your research into multiple smaller sessions
 
-## Session Management Issues
+## Interactive Mode and Session Management Issues
+
+### Issue: "Menu options not responding"
+
+**Solution:**
+1. Make sure you're entering a number between 1 and 5
+2. Check that your terminal supports interactive input
+3. Try running with a specific command line option instead (e.g., `python main.py -n`)
+
+### Issue: "Last session not showing up in interactive mode"
+
+**Solution:**
+1. The last session is only tracked within a single run of the application
+2. If you exit and restart the application, you'll need to select "Resume a specific session"
+3. Use `python main.py -l` to see all available sessions
 
 ### Issue: "Session not found"
 

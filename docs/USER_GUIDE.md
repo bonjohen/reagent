@@ -56,32 +56,48 @@ The Research Agent is a powerful tool designed to help you conduct comprehensive
 
 ## Usage
 
-### Basic Usage
+### Interactive Mode (Default)
 
-To start a new research session:
+The Research Agent now runs in interactive mode by default:
 
 ```bash
 python main.py
 ```
 
-You will be prompted to enter a research topic. Type your topic and press Enter to begin the research process.
+This will display a menu with the following options:
+
+1. **Continue with last session (resume)**: Resume the most recently used research session
+2. **List all research sessions**: View all available research sessions
+3. **Start a new research session**: Begin a new research project
+4. **Resume a specific session**: Select a specific session to resume
+5. **Exit**: Quit the application
+
+When starting a new session, you will be prompted to enter a research topic. Type your topic and press Enter to begin the research process.
+
+After completing a research session, you'll return to the menu where you can continue working with the same session, start a new one, or explore previous sessions.
 
 ### Command Line Options
 
-The Research Agent supports several command line options:
+The Research Agent also supports several command line options for direct access to specific functions:
 
+- `-n` or `--new`: Start a new research session
 - `-r` or `--resume`: Resume a previous research session by ID
 - `-l` or `--list`: List all research sessions
 
 Examples:
 
 ```bash
+# Start a new research session directly
+python main.py -n
+
 # List all research sessions
 python main.py -l
 
 # Resume a specific research session
 python main.py -r 20230101123456_my_research_topic
 ```
+
+Using these command-line options bypasses the interactive menu and performs the specified action directly.
 
 ### Research Process
 
@@ -153,11 +169,13 @@ If you continue to experience issues, please:
 
 ## Examples
 
-### Example 1: Basic Research
+### Example 1: Using Interactive Mode
 
 ```bash
 python main.py
 ```
+
+This will display the interactive menu. Choose option 3 to start a new research session.
 
 When prompted, enter: "The impact of artificial intelligence on healthcare"
 
@@ -166,7 +184,20 @@ The Research Agent will:
 2. Execute these searches to gather information
 3. Generate a comprehensive report on the topic
 
-### Example 2: Resuming Research
+After the research is complete, you'll return to the menu where you can:
+- Choose option 1 to continue working with this session
+- Choose option 3 to start a new research session on a different topic
+- Choose option 5 to exit the application
+
+### Example 2: Continuing a Session
+
+After completing a research session on AI in healthcare:
+
+1. From the interactive menu, choose option 1 to continue with the last session
+2. The application will automatically load the AI healthcare session
+3. You can view the report again or conduct additional research based on the follow-up questions
+
+### Example 3: Using Command Line Options
 
 ```bash
 # First, list all research sessions
@@ -174,9 +205,12 @@ python main.py -l
 
 # Then, resume a specific session
 python main.py -r 20230101123456_ai_healthcare
+
+# Or start a new session directly
+python main.py -n
 ```
 
-This will continue the research process from where it left off.
+These commands bypass the interactive menu and perform the specified action directly.
 
 ## Best Practices
 
@@ -184,11 +218,15 @@ This will continue the research process from where it left off.
 
 2. **Use enhanced search**: If possible, provide a Serper API key or Tavily API key for better search results.
 
-3. **Save session IDs**: Keep track of your research session IDs for future reference.
+3. **Use interactive mode for related research**: The interactive mode makes it easy to conduct a series of related research sessions without restarting the application.
 
-4. **Review and iterate**: Use the follow-up questions to conduct additional research and deepen your understanding.
+4. **Continue with last session**: Use option 1 in the interactive menu to quickly pick up where you left off with your most recent research.
 
-5. **Combine multiple sessions**: For complex topics, consider breaking down your research into multiple sessions and combining the results.
+5. **Save session IDs**: Keep track of your research session IDs for future reference, especially for important research topics.
+
+6. **Review and iterate**: Use the follow-up questions to conduct additional research and deepen your understanding.
+
+7. **Combine multiple sessions**: For complex topics, consider breaking down your research into multiple sessions and combining the results.
 
 ## Conclusion
 
