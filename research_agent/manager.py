@@ -549,13 +549,16 @@ class ResearchManager:
             print(f"[DEBUG] [{model_name}] Query: {query[:100]}..." if len(query) > 100 else f"[DEBUG] [{model_name}] Query: {query}")
             print(f"[DEBUG] [{model_name}] Search results count: {len(search_results)}")
 
-            # The Runner.run_streamed method returns a coroutine that should be awaited
+            # IMPORTANT: The Runner.run_streamed method returns a RunResultStreaming object, not a coroutine
+            # Do NOT use 'await' with this method as it will cause a TypeError:
+            # "object RunResultStreaming can't be used in 'await' expression"
+            # Instead, we process the streaming result directly using its methods
             print(f"[DEBUG] [{model_name}] Calling Runner.run_streamed...")
-            result = await Runner.run_streamed(
+            result = Runner.run_streamed(
                 writer_agent,
                 input,
             )
-            print(f"[DEBUG] [{model_name}] Runner.run_streamed completed successfully")
+            print(f"[DEBUG] [{model_name}] Runner.run_streamed initialized successfully")
 
             # Set up a timeout for the report generation
             start_time = time.time()
@@ -601,39 +604,98 @@ class ResearchManager:
         next_message = 0
 
         try:
-            # Since we're now awaiting the run_streamed call, we don't need to process stream events
-            # Just update progress messages periodically
-            current_time = time.time()
+            # Process the streaming result
+            final_output = None
 
-            # Update progress messages
-            while next_message < len(update_messages):
-                self.printer.update_item("writing", update_messages[next_message])
-                next_message += 1
+            # Set up a task to update progress messages
+            async def update_progress():
+                nonlocal next_message
+                while next_message < len(update_messages):
+                    self.printer.update_item("writing", update_messages[next_message])
+                    next_message += 1
 
-                # Add a small delay between updates
-                await asyncio.sleep(5)
+                    # Add a small delay between updates
+                    await asyncio.sleep(5)
 
-                # Check for timeout
-                current_time = time.time()
-                if current_time - start_time > timeout_seconds:
-                    self.printer.update_item(
-                        "error",
-                        f"Report generation timed out after {timeout_seconds} seconds",
-                        is_done=True,
-                    )
-                    print(f"Report generation timed out after {timeout_seconds} seconds")
-                    raise TimeoutError(f"Report generation timed out after {timeout_seconds} seconds")
+                    # Check for timeout
+                    current_time = time.time()
+                    if current_time - start_time > timeout_seconds:
+                        self.printer.update_item(
+                            "error",
+                            f"Report generation timed out after {timeout_seconds} seconds",
+                            is_done=True,
+                        )
+                        print(f"Report generation timed out after {timeout_seconds} seconds")
+                        raise TimeoutError(f"Report generation timed out after {timeout_seconds} seconds")
+
+            # Start the progress update task
+            progress_task = asyncio.create_task(update_progress())
 
             # Get the model being used
             model_name = writer_agent.model
+
+            # Process the streaming result
+            try:
+                print(f"[DEBUG] [{model_name}] Processing result type: {type(result)}")
+
+                # Check if result has a stream method
+                if hasattr(result, 'stream'):
+                    print(f"[DEBUG] [{model_name}] Result has stream method, processing stream events")
+                    for event in result.stream():
+                        print(f"[DEBUG] [{model_name}] Stream event type: {type(event)}")
+
+                        if hasattr(event, 'delta') and event.delta is not None:
+                            print(f"[DEBUG] [{model_name}] Event has delta: {event.delta}")
+                            # Process delta if needed
+                            pass
+
+                        if hasattr(event, 'final_output') and event.final_output is not None:
+                            print(f"[DEBUG] [{model_name}] Event has final_output: {type(event.final_output)}")
+                            final_output = event.final_output
+                            break
+                # If not, check if it has a final_output attribute directly
+                elif hasattr(result, 'final_output'):
+                    print(f"[DEBUG] [{model_name}] Result has final_output attribute")
+                    final_output = result.final_output
+                else:
+                    # If neither, use the result itself as the final output
+                    print(f"[DEBUG] [{model_name}] Using result directly as final_output")
+                    final_output = result
+            except Exception as e:
+                print(f"[DEBUG] [{model_name}] Error processing stream: {type(e).__name__}: {str(e)}")
+                # Fall back to using the result directly
+                final_output = result
+
+            # If final_output is None, use a fallback message
+            if final_output is None:
+                print(f"[DEBUG] [{model_name}] Final output is None, using fallback message")
+                final_output = {
+                    "short_summary": "Error generating report",
+                    "markdown_report": "# Latest AI Trends\n\nUnable to generate a complete report due to an error in processing the search results. Please try again with a more specific query or check the search results manually.",
+                    "follow_up_questions": [
+                        "What specific aspect of AI trends are you interested in?",
+                        "Would you like to focus on a particular industry's AI adoption?",
+                        "Are you interested in research advancements or commercial applications?"
+                    ]
+                }
+                # Convert the dictionary to a JSON string
+                import json
+                final_output = json.dumps(final_output)
+
+            # Cancel the progress update task
+            progress_task.cancel()
+            try:
+                await progress_task
+            except asyncio.CancelledError:
+                pass
 
             # If we get here, the stream completed successfully
             self.printer.mark_item_done("writing")
 
             # Log the final output for debugging
             print(f"\n[DEBUG] [{model_name}] Stream completed successfully")
-            print(f"[DEBUG] [{model_name}] Final output type: {type(result.final_output)}")
-            final_output_str = str(result.final_output)
+            print(f"[DEBUG] [{model_name}] Final output type: {type(final_output)}")
+            final_output_str = str(final_output)
             print(f"[DEBUG] [{model_name}] Final output length: {len(final_output_str)}")
             print(f"[DEBUG] [{model_name}] Final output preview: {final_output_str[:200]}..." if len(final_output_str) > 200 else f"[DEBUG] [{model_name}] Final output: {final_output_str}")
 

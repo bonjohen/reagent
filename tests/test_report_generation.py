@@ -18,7 +18,8 @@ async def test_write_report_awaits_run_streamed():
     manager.printer = mock_printer
 
     # Create a mock for Runner.run_streamed
-    mock_run_streamed = AsyncMock()
+    # Note: Runner.run_streamed returns a non-awaitable object, so we use MagicMock instead of AsyncMock
+    mock_run_streamed = MagicMock()
 
     # Create a mock result
     mock_result = MagicMock()
@@ -41,8 +42,8 @@ async def test_write_report_awaits_run_streamed():
         # Verify that Runner.run_streamed was called
         mock_run_streamed.assert_called_once()
 
-        # Verify that the result was properly awaited
-        # If run_streamed was awaited, then it would have been called with the correct arguments
+        # Verify that run_streamed was called with the correct arguments
+        # Note: Runner.run_streamed returns a non-awaitable object, so it should not be awaited
         mock_run_streamed.assert_called_once_with(writer_agent, "Original query: test query\nSummarized search results: ['test search result']")
 
         # Verify that ReportData.from_response was called with the final output
@@ -59,7 +60,8 @@ async def test_write_report_handles_timeout():
     manager.printer = mock_printer
 
     # Create a mock for Runner.run_streamed
-    mock_run_streamed = AsyncMock()
+    # Note: Runner.run_streamed returns a non-awaitable object, so we use MagicMock instead of AsyncMock
+    mock_run_streamed = MagicMock()
 
     # Configure the mock to raise a TimeoutError
     mock_run_streamed.side_effect = TimeoutError("Test timeout")

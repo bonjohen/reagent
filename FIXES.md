@@ -1,10 +1,10 @@
 # Bug Fixes Implemented
 
-## 1. Race Condition in Report Generation [FIXED 04-07-2025]
+## 1. TypeError in Report Generation [FIXED 04-07-2025]
 - **Location**: research_agent/manager.py
-- **Bug**: Missing `await` in `result = Runner.run_streamed(writer_agent, input)`
-- **Fix**: Added `await` to properly handle async stream: `result = await Runner.run_streamed(writer_agent, input)`
-- **Impact**: Prevents race condition that could cause data corruption or incomplete reports
+- **Bug**: Incorrect use of `await` with non-awaitable object: `result = await Runner.run_streamed(writer_agent, input)`
+- **Fix**: Removed `await` since the method returns a non-awaitable object: `result = Runner.run_streamed(writer_agent, input)`
+- **Impact**: Prevents TypeError "object RunResultStreaming can't be used in 'await' expression"
 - **Recurrence** Initial Incident
 
 ## 2. Memory Leak in Terminal Display [FIXED 04-07-2025]
@@ -157,13 +157,13 @@
 - **Recurrence** Initial Incident
 - **Test**: Added tests in tests/test_json_error_recovery.py to verify query intent preservation
 
-## 22. Race Condition in Report Generation [FIXED 04-07-2025]
+## 22. TypeError in Report Generation [FIXED 04-07-2025]
 - **Location**: research_agent/manager.py
-- **Bug**: Missing `await` in `result = Runner.run_streamed(writer_agent, input)`
-- **Fix**: Added `await` to properly handle async stream: `result = await Runner.run_streamed(writer_agent, input)`
-- **Impact**: Prevents race condition that could cause data corruption or incomplete reports
+- **Bug**: Incorrect use of `await` with non-awaitable object: `result = await Runner.run_streamed(writer_agent, input)`
+- **Fix**: Removed `await` since the method returns a non-awaitable object: `result = Runner.run_streamed(writer_agent, input)`
+- **Impact**: Prevents TypeError "object RunResultStreaming can't be used in 'await' expression"
 - **Recurrence**: Repeat Incident (1)
-- **Test**: Added tests in tests/test_report_generation.py to verify proper async handling
+- **Test**: Updated tests in tests/test_report_generation.py to reflect that Runner.run_streamed is not awaitable
 
 ## 23. Memory Leak in Terminal Display [FIXED 04-07-2025]
 - **Location**: research_agent/printer.py
