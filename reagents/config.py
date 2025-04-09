@@ -129,6 +129,13 @@ class AppConstants:
     MAX_REPORT_LENGTH = 10000  # Maximum length of a report in characters
     MAX_SEARCH_RESULT_LENGTH = 8000  # Maximum combined length of search results
 
+    # Timeout values
+    SEARCH_TIMEOUT_SECONDS = 60  # Timeout for search operations
+    REPORT_TIMEOUT_SECONDS = 300  # Timeout for report generation
+
+    # Fallback plan settings
+    FALLBACK_PLAN_SIZE = 5  # Number of questions in fallback plan
+
 
 # Question generator configuration
 class QuestionGeneratorConfig:

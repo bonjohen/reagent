@@ -157,11 +157,7 @@ class WebSearchPlan(BaseModel):
                 elif isinstance(item, dict) and 'query' in item:
                     # If the item is a dict with a query field, use it directly
                     # (this handles backward compatibility with the old format)
-                    search_item = {"query": item['query']}
-                    # Include the reason field if present
-                    if 'reason' in item:
-                        search_item["reason"] = item['reason']
-                    search_items.append(search_item)
+                    search_items.append({"query": item['query']})
                 else:
                     raise ValueError(f"Search item {i} must be a string or an object with a 'query' field")
 
@@ -188,7 +184,7 @@ class WebSearchPlan(BaseModel):
         """Attempt to repair common JSON formatting issues."""
         # Replace single quotes with double quotes (common mistake)
         repaired = json_str.replace("'", '"')
-
+        
         # Fix unquoted keys
         repaired = re.sub(r"([{,])\s*(\w+)\s*:", r'\1"\2":', repaired)
 

@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-import traceback
-from typing import Optional, List
+from typing import Optional
 
 from rich.console import Console
 
@@ -13,7 +12,7 @@ from reagents.agents.planner_agent import WebSearchItem, WebSearchPlan, planner_
 from reagents.agents.search_agent import search_agent
 from reagents.agents.writer_agent import ReportData, writer_agent
 from reagents.agents.question_generator_agent import generate_questions, QuestionGeneratorResult
-from reagents.config import QuestionGeneratorConfig, ModelConfig
+from reagents.config import QuestionGeneratorConfig, ModelConfig, AppConstants
 from reagents.printer import Printer
 from reagents.error_utils import format_error
 from reagents.persistence import ResearchPersistence
@@ -57,6 +56,9 @@ class ResearchManager:
 
         Args:
             query: The research query to investigate
+
+        Returns:
+            None
         """
         # Generate a trace ID for tracking the research process
         trace_id = gen_trace_id()
@@ -330,7 +332,6 @@ class ResearchManager:
                                 error_msg = format_error(e, "additional question generation")
                                 self.printer.update_item(
                                     "warning",
-                                 #   f"Error generating additional questions: {error_msg}",
                                     "query: {query}",
                                     is_done=True,
                                 )
@@ -445,8 +446,7 @@ class ResearchManager:
             )
 
             # Parse the response to get the search plan
-            # Pass the original query to use in fallback plan if needed
-            search_plan = WebSearchPlan.from_response(str(result.final_output), original_query=query)
+            search_plan = WebSearchPlan.from_response(str(result.final_output))
 
             self.printer.update_item(
                 "planning",
@@ -465,7 +465,6 @@ class ResearchManager:
                 f"Error planning searches [{model_name}]: {sanitized_error}",
                 is_done=True,
             )
-            print(f"[{model_name}] Planning error: {error_type}")
             raise e
 
     async def _perform_searches(self, search_plan: WebSearchPlan) -> WebSearchPlan:
@@ -543,7 +542,6 @@ class ResearchManager:
                         # Task was cancelled, just skip it
                         pass
                     except Exception as e:
-                        error_msg = f"[Search error: {str(e)}]"
                         self.printer.update_item(
                             "error",
                             f"Error in search task: {str(e)}",
@@ -608,7 +606,7 @@ class ResearchManager:
 
         try:
             # Set a timeout for the search operation
-            timeout_seconds = 60  # 1 minute timeout per search
+            timeout_seconds = AppConstants.SEARCH_TIMEOUT_SECONDS
 
             # Try using custom search tools first if available
             if custom_search_tool:
@@ -692,7 +690,6 @@ class ResearchManager:
                     f"Search for '{item.query}' timed out after {timeout_seconds} seconds",
                     is_done=True,
                 )
-                print(f"Search timeout for '{item.query}' after {timeout_seconds} seconds")
                 return f"[Search for '{item.query}' timed out after {timeout_seconds} seconds]"
         except Exception as e:
             # Sanitize error message to avoid exposing sensitive information
@@ -704,8 +701,6 @@ class ResearchManager:
                 f"Error searching for '{item.query}': {sanitized_error}",
                 is_done=True,
             )
-            # Log the error for debugging (but don't include in user-facing output)
-            print(f"Search error for '{item.query}': {error_type}")
             return f"[Error searching for '{item.query}': {sanitized_error}]"
 
     async def _write_report(self, query: str, search_results: list[str]) -> ReportData:
@@ -728,7 +723,6 @@ class ResearchManager:
                 "No search results available. Cannot generate report.",
                 is_done=True,
             )
-            print("WARNING: No search results available. Cannot generate report.")
 
             # Create a fallback report with an error message
             fallback_data = {
@@ -763,7 +757,6 @@ class ResearchManager:
                 "All search results were invalid. Cannot generate report.",
                 is_done=True,
             )
-            print("WARNING: All search results were invalid. Cannot generate report.")
 
             # Create a fallback report with an error message
             fallback_data = {
@@ -781,28 +774,20 @@ class ResearchManager:
         llm_input = input
 
         # Set a timeout for the report generation
-        timeout_seconds = 300  # 5 minutes timeout for report generation
+        timeout_seconds = AppConstants.REPORT_TIMEOUT_SECONDS
 
         try:
             # Get the model being used
             model_name = writer_agent.model
 
-            print(f"\n[DEBUG] [{model_name}] Starting report generation...")
-            print(f"[DEBUG] [{model_name}] Input type: {type(input)}")
-            print(f"[DEBUG] [{model_name}] Input length: {len(input)}")
-            print(f"[DEBUG] [{model_name}] Query: {query[:100]}..." if len(query) > 100 else f"[DEBUG] [{model_name}] Query: {query}")
-            print(f"[DEBUG] [{model_name}] Search results count: {len(search_results)}")
-
             # IMPORTANT: The Runner.run_streamed method returns a RunResultStreaming object, not a coroutine
             # Do NOT use 'await' with this method as it will cause a TypeError:
             # "object RunResultStreaming can't be used in 'await' expression"
             # Instead, we process the streaming result directly using its methods
-            print(f"[DEBUG] [{model_name}] Calling Runner.run_streamed...")
             result = Runner.run_streamed(
                 writer_agent,
                 input,
             )
-            print(f"[DEBUG] [{model_name}] Runner.run_streamed initialized successfully")
 
             # Set up a timeout for the report generation
             start_time = time.time()
@@ -812,16 +797,8 @@ class ResearchManager:
             # Get the model being used
             model_name = writer_agent.model
 
-            # Detailed error logging
+            # Get error type for sanitized error message
             error_type = type(e).__name__
-            print(f"\n[DEBUG] [{model_name}] Error in report generation: {error_type}")
-            print(f"[DEBUG] [{model_name}] Error message: {str(e)}")
-            print(f"[DEBUG] [{model_name}] Error details: {repr(e)}")
-
-            # Print stack trace for debugging
-            import traceback
-            print(f"[DEBUG] [{model_name}] Stack trace:")
-            traceback.print_exc()
 
             # Sanitize error message for user display
             sanitized_error = f"A {error_type} occurred during report generation"
@@ -831,7 +808,6 @@ class ResearchManager:
                 f"Error generating report [{model_name}]: {sanitized_error}",
                 is_done=True,
             )
-            print(f"[{model_name}] Report generation error: {error_type}")
             raise e
 
         # Show progress updates while the report is being generated
@@ -869,7 +845,6 @@ class ResearchManager:
                             f"Report generation timed out after {timeout_seconds} seconds",
                             is_done=True,
                         )
-                        print(f"Report generation timed out after {timeout_seconds} seconds")
                         raise TimeoutError(f"Report generation timed out after {timeout_seconds} seconds")
 
             # Start the progress update task
@@ -1063,14 +1038,7 @@ class ResearchManager:
                     content_info += f"\n\n## LLM Output Preview\n\n```\n{content_preview}\n```\n"
 
                 # Add information about search results if available
-                search_info = ""
-                if search_results and len(search_results) > 0:
-                    search_count = len(search_results)
-                    # Include the full raw search results data for debugging
-                    search_preview = str(search_results[:3]) + "..." if len(search_results) > 3 else str(search_results)
-
-                    # Create a more detailed section with the raw data
-                    search_info = f"\n\n## Search Results\n\n- **Count**: {search_count}\n- **Preview**: {search_preview}\n\n### Raw Search Results Data\n\n```\n{str(search_results)}\n```\n"
+                # We have search results, but we don't need to do anything with them here
 
                 # Create a proper title instead of an error message
                 error_title = f"Research Results for '{query}'"
@@ -1082,19 +1050,20 @@ class ResearchManager:
                 error_message += "The complete input sent to the LLM, LLM output stream, and raw search results data are included below for debugging purposes. "
                 error_message += "Please try again with a more specific query or check the search results manually."
 
-                # Create a section for the input sent to the LLM
-                llm_input_info = ""
+                # Check if we have the LLM input and result for debugging
                 if 'llm_input' in locals() and llm_input is not None:
-                    llm_input_info = f"\n\n## Input Sent to LLM\n\n```\n{llm_input}\n```\n"
+                    # We have the input, but we don't need to do anything with it here
+                    pass
 
-                # Create a section for raw LLM data
-                llm_debug_info = ""
+                # Check if we have the result object for debugging
                 if 'result' in locals() and result is not None:
-                    llm_debug_info = f"\n\n## LLM Result Object\n\n```\n{str(result)}\n```\n"
+                    # We have the result, but we don't need to do anything with it here
+                    pass
 
                 # Add events debug info if available
                 if 'events_debug_info' in locals():
-                    llm_debug_info += events_debug_info
+                    # We have events debug info, but we don't need to do anything with it here
+                    pass
 
                 # Use the LLM input directly as the markdown_report for testing
                 fallback_data = {

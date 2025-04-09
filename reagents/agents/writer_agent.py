@@ -217,9 +217,6 @@ class ReportData(BaseModel):
         Returns:
             The repaired JSON string
         """
-        # We don't need to add follow_up_questions anymore
-        # Just continue with the repair process
-
         # Apply a series of regex replacements to fix common issues
         # These are ordered from most specific to most general
 

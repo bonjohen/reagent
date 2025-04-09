@@ -1,10 +1,7 @@
 """
 Unit tests for the planner_agent module.
 """
-import pytest
 import json
-import re
-from unittest.mock import patch
 
 from reagents.agents.planner_agent import WebSearchItem, WebSearchPlan
 
@@ -105,12 +102,11 @@ class TestPlannerAgent:
         # Create an invalid JSON response
         response = "This is not valid JSON"
 
-        # Parse the response - should create a fallback plan
+        # Parse the response - should create an empty plan
         plan = WebSearchPlan.from_response(response)
 
-        # Check that a fallback plan was created
-        assert len(plan.searches) > 0
-        assert "error" in plan.searches[0].query.lower()
+        # Check that an empty plan was created
+        assert len(plan.searches) == 0
 
     def test_from_response_missing_searches(self):
         """Test parsing a JSON response with missing searches field."""
@@ -121,12 +117,11 @@ class TestPlannerAgent:
         }
         response = json.dumps(response_data)
 
-        # Parse the response - should create a fallback plan
+        # Parse the response - should create an empty plan
         plan = WebSearchPlan.from_response(response)
 
-        # Check that a fallback plan was created
-        assert len(plan.searches) > 0
-        assert "error" in plan.searches[0].query.lower()
+        # Check that an empty plan was created
+        assert len(plan.searches) == 0
 
     def test_from_response_invalid_searches_type(self):
         """Test parsing a JSON response with searches not being a list."""
@@ -136,12 +131,11 @@ class TestPlannerAgent:
         }
         response = json.dumps(response_data)
 
-        # Parse the response - should create a fallback plan
+        # Parse the response - should create an empty plan
         plan = WebSearchPlan.from_response(response)
 
-        # Check that a fallback plan was created
-        assert len(plan.searches) > 0
-        assert "error" in plan.searches[0].query.lower()
+        # Check that an empty plan was created
+        assert len(plan.searches) == 0
 
     def test_from_response_invalid_search_item(self):
         """Test parsing a JSON response with invalid search items."""
@@ -155,12 +149,11 @@ class TestPlannerAgent:
         }
         response = json.dumps(response_data)
 
-        # Parse the response - should create a fallback plan
+        # Parse the response - should create an empty plan
         plan = WebSearchPlan.from_response(response)
 
-        # Check that a fallback plan was created
-        assert len(plan.searches) > 0
-        assert "error" in plan.searches[0].query.lower()
+        # Check that an empty plan was created
+        assert len(plan.searches) == 0
 
     def test_json_repair(self):
         """Test the JSON repair functionality."""

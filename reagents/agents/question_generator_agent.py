@@ -28,13 +28,7 @@ class QuestionGeneratorResult:
             questions: List of generated questions
             topic: The original research topic
         """
-        # Replace template variables in questions
-        self.questions = []
-        for question in questions:
-            # Replace {topic} with the actual topic
-            if "{topic}" in question and topic:
-                question = question.replace("{topic}", topic)
-            self.questions.append(question)
+        self.questions = questions
         self.topic = topic
 
     def to_dict(self) -> Dict[str, Any]:
@@ -186,7 +180,7 @@ async def generate_questions(topic: str, min_questions: int = QuestionGeneratorC
 
         # Run the planner agent to get questions
         result = await Runner.run(planner_agent, topic)
-        search_plan = WebSearchPlan.from_response(str(result.final_output), original_query=topic)
+        search_plan = WebSearchPlan.from_response(str(result.final_output))
 
         # Extract questions from the search plan
         questions = [item.query for item in search_plan.searches]
