@@ -70,14 +70,22 @@ class ModelConfig:
         return cls.get_model_with_fallback("planner")
 
 
-def disable_openai_tracing():
+def disable_openai_tracing(force_disable=True):
     """Disable OpenAI trace ingestion by patching the SDK.
 
     This is a more direct approach than filtering log messages.
 
+    Args:
+        force_disable: If True, disable tracing regardless of the ENABLE_TRACING setting
+
     Returns:
         bool: True if tracing was successfully disabled, False otherwise
     """
+    # Check if tracing should be enabled based on configuration
+    if not force_disable and AppConstants.ENABLE_TRACING:
+        logger.info("OpenAI tracing is enabled by configuration")
+        return True
+
     try:
         # Check if openai module is available
         if importlib.util.find_spec("openai") is None:
@@ -122,19 +130,19 @@ class AppConstants:
     DEFAULT_DATA_DIR = "research_data"
 
     # API limits
-    MAX_SEARCH_RESULTS = 10
+    MAX_SEARCH_RESULTS = 20
     MAX_SEARCH_DEPTH = "advanced"  # Can be "basic" or "advanced"
 
     # Content limits
     MAX_REPORT_LENGTH = 10000  # Maximum length of a report in characters
     MAX_SEARCH_RESULT_LENGTH = 8000  # Maximum combined length of search results
+    MAX_TITLE_LENGTH = 200  # Maximum length of a search result title
+    MAX_DESCRIPTION_LENGTH = 800  # Maximum length of a search result description/content
 
-    # Timeout values
-    SEARCH_TIMEOUT_SECONDS = 60  # Timeout for search operations
-    REPORT_TIMEOUT_SECONDS = 300  # Timeout for report generation
-
-    # Fallback plan settings
-    FALLBACK_PLAN_SIZE = 5  # Number of questions in fallback plan
+    # Tracing configuration
+    ENABLE_TRACING = False  # Whether to enable OpenAI tracing
+    SEARCH_TIMEOUT_SECONDS = 30  # Timeout for search operations
+    REPORT_TIMEOUT_SECONDS = 120  # Timeout for report generation
 
 
 # Question generator configuration
@@ -173,7 +181,9 @@ class EnvironmentConfig:
     @staticmethod
     def get_tavily_api_key() -> Optional[str]:
         """Get the Tavily API key from environment variables."""
-        return os.environ.get("TAVILY_API_KEY")
+        api_key = os.environ.get("TAVILY_API_KEY")
+        print(f"DEBUG - EnvironmentConfig.get_tavily_api_key() returning: '{api_key}'")
+        return api_key
 
     @staticmethod
     def has_search_api_keys() -> bool:
@@ -181,21 +191,28 @@ class EnvironmentConfig:
         return bool(EnvironmentConfig.get_serper_api_key() or EnvironmentConfig.get_tavily_api_key())
 
 
-def initialize_app():
+def initialize_app(disable_tracing=False):
     """Initialize the application.
 
     This function performs all necessary initialization tasks for the application,
-    including disabling OpenAI tracing and any other setup tasks.
+    including configuring OpenAI tracing and any other setup tasks.
+
+    Args:
+        disable_tracing: If True, force disable tracing regardless of the ENABLE_TRACING setting
 
     Returns:
         bool: True if initialization was successful, False otherwise
     """
     success = True
 
-    # Disable OpenAI tracing
-    if not disable_openai_tracing():
-        logger.warning("Failed to disable OpenAI tracing, but continuing anyway")
-        success = False
+    # Configure OpenAI tracing based on settings
+    if AppConstants.ENABLE_TRACING and not disable_tracing:
+        logger.info("OpenAI tracing is enabled by configuration")
+    else:
+        # Disable OpenAI tracing
+        if not disable_openai_tracing(force_disable=disable_tracing):
+            logger.warning("Failed to disable OpenAI tracing, but continuing anyway")
+            success = False
 
     # Add any other initialization tasks here
 

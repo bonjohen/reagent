@@ -25,8 +25,26 @@ class BaseSearchTool:
         self.api_key = api_key
         self.api_name = api_name
         self.endpoint = ""  # To be set by subclasses
-        self.last_urls = []  # Store the URLs from the last search
-        self.last_search_results = []  # Store detailed search results from the last search
+        self.error_state = False  # Flag to indicate if an error has occurred
+        self.stop_after_first_error = True  # Flag to indicate if we should stop after the first error
+
+    def set_error_state(self, state: bool) -> None:
+        """Set the error state flag.
+
+        Args:
+            state: True if an error has occurred, False otherwise
+        """
+        self.error_state = state
+        if state:
+            logger.warning(f"{self.api_name} search tool is now in error state. No more searches will be performed.")
+
+    def has_error(self) -> bool:
+        """Check if the search tool is in an error state.
+
+        Returns:
+            True if an error has occurred, False otherwise
+        """
+        return self.error_state
 
     def _validate_api_key(self, min_length: int = 20, prefix: Optional[str] = None,
                          check_alphanumeric: bool = True) -> None:
@@ -81,6 +99,22 @@ class BaseSearchTool:
                 if response.status != 200:
                     error_text = await response.text()
                     logger.error(f"{self.api_name} API error: {response.status} - {error_text}")
+
+                    # Handle authentication errors (401) or credit errors (400)
+                    if response.status == 401:
+                        error_message = f"ERROR: {self.api_name} API authentication failed. Invalid API key. Please check your {self.api_name} API key and try again."
+                        # Set the error state to prevent further searches
+                        self.set_error_state(True)
+                        return None, f"[{error_message}]"
+                    elif response.status == 400 and "Not enough credits" in error_text:
+                        error_message = f"ERROR: {self.api_name} API returned 'Not enough credits'. Your {self.api_name} account has run out of credits. Please add more credits to your {self.api_name} account or use a different API key."
+                        # Set the error state to prevent further searches
+                        self.set_error_state(True)
+                        # This is a critical error that should stop all further searches
+                        # We'll only process the first search query and stop
+                        self.stop_after_first_error = True
+                        return None, f"[{error_message}]"
+
                     return None, f"[Search for '{query}' failed: API returned status {response.status}]"
 
                 data = await response.json()

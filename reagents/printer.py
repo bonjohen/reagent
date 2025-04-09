@@ -87,7 +87,24 @@ class Printer:
         """
         text = Text()
 
-        for i, (_, item) in enumerate(self.items.items()):
+        # Filter out items that contain "query: {query}" or just the query text by itself
+        filtered_items = []
+        for key, item in self.items.items():
+            # Skip items that match the patterns we want to filter out
+            if (item["text"] == "query: {query}" or
+                item["text"] == "{query}" or
+                key == "query" or
+                (not key.startswith("0") and not key.startswith("1") and
+                 not key.startswith("generating") and not key.startswith("planning") and
+                 not key.startswith("searching") and not key.startswith("writing") and
+                 not key.startswith("error") and not key.startswith("warning") and
+                 not key.startswith("trace") and not key.startswith("resuming") and
+                 not key.startswith("basic") and not key.startswith("focused") and
+                 not key.startswith("total"))):
+                continue
+            filtered_items.append((key, item))
+
+        for i, (_, item) in enumerate(filtered_items):
             if i > 0:
                 text.append("\n")
 

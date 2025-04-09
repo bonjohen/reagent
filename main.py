@@ -1,11 +1,16 @@
 import asyncio
 import os
-import argparse
+import sys
 from typing import Optional
 
-# Configure logging first to suppress unwanted messages
+# Import logging configuration
 from reagents.logging_config import configure_logging
-configure_logging()
+
+# Configure logging with default settings
+configure_logging(disable_tracing=False)
+
+# Get command line arguments directly without using argparse
+search_terms = sys.argv[1:] if len(sys.argv) > 1 else []
 
 # Import project modules
 from reagents.manager import ResearchManager
@@ -228,11 +233,7 @@ async def run_research_session(session_id: Optional[str] = None, query: Optional
         # Run the research process
         await manager.run(query)
 
-        # Display the location of the generated file
-        file_path = os.path.join("research_data", f"{session_id}.json")
-        print("\n" + "=" * 80)
-        print(f"RESEARCH DOCUMENT CREATED AT:\n{os.path.abspath(file_path)}")
-        print("=" * 80)
+        # No need to display the file path here as it's already shown in the Research Progress panel
 
         # Return the session ID that was used or created
         return manager.session_id
@@ -252,29 +253,31 @@ async def main() -> None:
         os.environ["SERPER_API_KEY"] = serper_api_key
 
     if tavily_api_key:
-        print(f"Tavily API key found. Web search will use Tavily.")
+        # Check if the Tavily API key is in the correct format
+        if not tavily_api_key.startswith("tvly-"):
+            print(f"\nCRITICAL ERROR: Tavily API key does not start with 'tvly-' prefix.")
+            print(f"Please ensure you're using a valid Tavily API key from https://tavily.com/")
+            print("\nExiting now.\n")
+            exit(1)
+        else:
+            print(f"Tavily API key found. Web search will use Tavily.")
+
         # Set it in the environment for the search tools to use
         os.environ["TAVILY_API_KEY"] = tavily_api_key
 
     if not serper_api_key and not tavily_api_key:
-        print("Warning: No search API keys found. Web search functionality will be limited.")
-        print("For better search results, set SERPER_API_KEY or TAVILY_API_KEY environment variables.")
+        print("Warning: No search API keys found. Using DuckDuckGo search engine (no API key required).")
+        print("For better search results with more options, set SERPER_API_KEY or TAVILY_API_KEY environment variables.")
+        # Set an environment variable to indicate DuckDuckGo should be used
+        os.environ["USE_DUCKDUCKGO"] = "1"
 
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Research Agent powered by OpenAI Agent SDK")
-    parser.add_argument("-r", "--resume", help="Resume a previous research session by ID")
-    parser.add_argument("-l", "--list", action="store_true", help="List all research sessions")
-    parser.add_argument("-n", "--new", action="store_true", help="Start a new research session")
-    parser.add_argument("-q", "--questions-only", action="store_true", help="Generate research questions only without executing the full research process")
-    parser.add_argument("search_terms", nargs="*", help="Optional search terms for a new research session")
-    args = parser.parse_args()
-
+    # No additional arguments needed
     print("Research Agent powered by OpenAI Agent SDK")
     print("------------------------------------------")
 
     # If search terms are provided, use them for a new research session
-    if args.search_terms:
-        search_query = " ".join(args.search_terms)
+    if search_terms:
+        search_query = " ".join(search_terms)
         print(f"Starting new research session with query: {search_query}")
 
         # Create a ResearchManager directly to get the session ID
@@ -290,35 +293,8 @@ async def main() -> None:
         # Run the research process
         await manager.run(search_query)
 
-        # Display the location of the generated file
-        file_path = os.path.join("research_data", f"{session_id}.json")
-        print("\n" + "=" * 80)
-        print(f"RESEARCH DOCUMENT CREATED AT:\n{os.path.abspath(file_path)}")
-        print("=" * 80)
+        # The file path is shown in the Research Progress panel
         return
-
-    # If specific command line arguments are provided, run in non-interactive mode
-    if args.list or args.resume or args.new or args.questions_only:
-        # Handle listing sessions
-        if args.list:
-            list_sessions()
-            return
-
-        # Handle resuming a session
-        if args.resume:
-            await run_research_session(session_id=args.resume)
-            return
-
-        # Handle starting a new session
-        if args.new:
-            await run_research_session()
-            return
-
-        # Handle generating questions only
-        if args.questions_only:
-            topic = input("Enter a research topic: ").strip()
-            await generate_questions_only(topic)
-            return
 
     # Otherwise, run in interactive mode with a menu
     last_session_id = None

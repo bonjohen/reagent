@@ -6,8 +6,12 @@ import logging
 from reagents.logging_filter import apply_filters
 from reagents.config import initialize_app
 
-def configure_logging():
-    """Configure logging for the research agent."""
+def configure_logging(disable_tracing=False):
+    """Configure logging for the research agent.
+
+    Args:
+        disable_tracing: If True, force disable OpenAI tracing regardless of configuration
+    """
     # Set up root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
@@ -27,7 +31,7 @@ def configure_logging():
     apply_filters()
 
     # Initialize the application
-    initialize_app()
+    initialize_app(disable_tracing=disable_tracing)
 
     # You can add more loggers to suppress here if needed
     # For example:

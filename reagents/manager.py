@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 from typing import Optional
 
@@ -16,10 +17,12 @@ from reagents.config import QuestionGeneratorConfig, ModelConfig, AppConstants
 from reagents.printer import Printer
 from reagents.error_utils import format_error
 from reagents.persistence import ResearchPersistence
+from contextlib import nullcontext
 
 # Import custom search tools
 try:
     from reagents.tools.search_tools import get_search_tool
+    # Use the get_search_tool function to get the appropriate search tool
     custom_search_tool = get_search_tool()
     print(f"Using custom search tool: {custom_search_tool.__class__.__name__ if custom_search_tool else 'None'}")
 except ImportError:
@@ -60,27 +63,32 @@ class ResearchManager:
         Returns:
             None
         """
-        # Generate a trace ID for tracking the research process
-        trace_id = gen_trace_id()
+        # Determine whether to use tracing based on configuration
+        use_tracing = AppConstants.ENABLE_TRACING
+
+        # Generate a trace ID for tracking the research process if tracing is enabled
+        trace_id = gen_trace_id() if use_tracing else None
+
+        # Use the appropriate context manager based on whether tracing is enabled
+        trace_context = trace("Research trace", trace_id=trace_id) if use_tracing else nullcontext()
 
         # Use the printer as a context manager to ensure cleanup
-        with self.printer, trace("Research trace", trace_id=trace_id):
+        with self.printer, trace_context:
             try:
-                self.printer.update_item(
-                    "trace_id",
-                    f"View trace: https://platform.openai.com/traces/trace?trace_id={trace_id}",
-                    is_done=True,
-                    hide_checkmark=True,
-                )
+                # Only show trace ID if tracing is enabled
+                if use_tracing and trace_id:
+                    self.printer.update_item(
+                        "trace_id",
+                        f"View trace: https://platform.openai.com/traces/trace?trace_id={trace_id}",
+                        is_done=True,
+                        hide_checkmark=True,
+                    )
 
                 # No demo mode
 
-                self.printer.update_item(
-                    "starting",
-                    "Starting research...",
-                    is_done=True,
-                    hide_checkmark=True,
-                )
+                # Removed 'Starting research...' message
+
+                # Query will be displayed in the report summary, no need to display it separately
 
                 # Step 1: Generate research questions
                 search_questions = None
@@ -309,7 +317,7 @@ class ResearchManager:
 
                                     self.printer.update_item(
                                         "generating_questions",
-                                        f"Generated {len(additional_questions_result.questions)} additional questions from search results (total: {len(unique_questions)})",
+                                        f"Generated {len(additional_questions_result.questions)} additional unique questions from search results (total: {len(unique_questions)})",
                                         is_done=True,
                                     )
                                 else:
@@ -349,7 +357,7 @@ class ResearchManager:
 
                 # Step 3: Mark the research as completed
                 try:
-                    # Create a simple report with just the summary
+                    # Create a simple report with just the summary - but don't display it
                     report = ReportData(
                         short_summary=f"Research Results for '{query}'",
                         model=ModelConfig.get_writer_model()
@@ -370,21 +378,63 @@ class ResearchManager:
                     )
                     return
 
-                # Display a summary of the report
-                final_report = f"Report summary\n\n{report.short_summary}"
-                self.printer.update_item("final_report", final_report, is_done=True)
+                # Reorder the display items to match the desired format
+                # The printer sorts items by key, so we prefix with numbers
 
-                # Display session information
+                # Query is now part of the report summary, no need to move it
+
+                # We're no longer displaying the report summary line
+
+                # Move the basic questions display
+                if "basic_questions" in self.printer.items:
+                    item = self.printer.items["basic_questions"]
+                    self.printer.update_item("02_basic_questions", item["text"], item["is_done"], item["hide_checkmark"])
+                    del self.printer.items["basic_questions"]
+
+                # Move the focused questions display
+                if "focused_questions" in self.printer.items:
+                    item = self.printer.items["focused_questions"]
+                    self.printer.update_item("03_focused_questions", item["text"], item["is_done"], item["hide_checkmark"])
+                    del self.printer.items["focused_questions"]
+
+                # Move the total questions display
+                if "total_questions" in self.printer.items:
+                    item = self.printer.items["total_questions"]
+                    self.printer.update_item("04_total_questions", item["text"], item["is_done"], item["hide_checkmark"])
+                    del self.printer.items["total_questions"]
+
+                # Move the searching display
+                if "searching" in self.printer.items:
+                    item = self.printer.items["searching"]
+                    self.printer.update_item("05_searching", item["text"], item["is_done"], item["hide_checkmark"])
+                    del self.printer.items["searching"]
+
+                # Count unique URLs from search results
+                unique_urls = set()
+                if search_plan and search_plan.searches:
+                    for search_item in search_plan.searches:
+                        if search_item.urls:
+                            unique_urls.update(search_item.urls)
+
+                # Display the count of unique URLs
+                self.printer.update_item(
+                    "06_unique_urls",
+                    f"Searches produced {len(unique_urls)} unique URLs",
+                    is_done=True,
+                )
+
+                # Display session information with full path
                 if self._session_id:
+                    # Get the full path to the session file
+                    session_file_path = os.path.join(self.persistence.data_dir, f"{self._session_id}.json")
+                    session_file_path = os.path.abspath(session_file_path)
+
                     self.printer.update_item(
-                        "session_info",
-                        f"Research session saved: {self._session_id}",
+                        "07_session_info",
+                        f"Research session saved: {session_file_path}",
                         is_done=True,
                     )
 
-                # Print the report summary
-                print("\n\n=====REPORT SUMMARY=====\n\n")
-                print(f"Summary: {report.short_summary}")
             except Exception as e:
                 error_msg = format_error(e, "research process")
                 self.printer.update_item(
@@ -411,8 +461,8 @@ class ResearchManager:
         # Update the printer with the number of questions generated
         if result.questions:
             self.printer.update_item(
-                "generating_questions",
-                f"Generated {len(result.questions)} research questions",
+                "basic_questions",
+                f"Started with {len(result.questions)} basic research questions",
                 is_done=True,
             )
         else:
@@ -449,8 +499,8 @@ class ResearchManager:
             search_plan = WebSearchPlan.from_response(str(result.final_output))
 
             self.printer.update_item(
-                "planning",
-                f"Will perform {len(search_plan.searches)} searches",
+                "focused_questions",
+                f"Generated {len(search_plan.searches)} focused research questions",
                 is_done=True,
             )
 
@@ -477,8 +527,14 @@ class ResearchManager:
         Returns:
             The search plan with results populated
         """
-        with custom_span("Search the web"):
-            self.printer.update_item("searching", "Searching...")
+        # Determine whether to use tracing based on configuration
+        use_tracing = AppConstants.ENABLE_TRACING
+
+        # Use the appropriate context manager based on whether tracing is enabled
+        span_context = custom_span("Search the web") if use_tracing else nullcontext()
+
+        with span_context:
+            self.printer.update_item("searching", f"Searching for '{search_plan.searches[0].query[:50]}{'...' if len(search_plan.searches[0].query) > 50 else ''}' and {len(search_plan.searches)-1} other queries...")
 
             # Regular search process with API calls
             # Rate limiting configuration
@@ -486,6 +542,31 @@ class ResearchManager:
             delay_between_searches = 1.0  # Delay in seconds between starting searches
             search_timeout = 60.0  # Timeout for each individual search in seconds
             overall_timeout = 300.0  # Overall timeout for all searches in seconds
+
+            # Debug logging
+            print(f"DEBUG: Starting search process with {len(search_plan.searches)} queries")
+            print(f"DEBUG: Search tool: {custom_search_tool.__class__.__name__ if custom_search_tool else 'None'}")
+
+            # Check available credits if using Serper or Tavily
+            if custom_search_tool:
+                try:
+                    # Check available credits
+                    if custom_search_tool.__class__.__name__ == "SerperSearchTool":
+                        account_info = await custom_search_tool.check_credits()
+                        if "error" in account_info:
+                            print(f"WARNING: Could not check Serper API credits: {account_info['error']}")
+                        elif "credit" in account_info and account_info["credit"] < len(search_plan.searches):
+                            print(f"\nWARNING: Serper API has only {account_info['credit']} credits remaining, but {len(search_plan.searches)} searches are planned.")
+                            print(f"Some searches may fail due to insufficient credits.")
+                    elif custom_search_tool.__class__.__name__ == "TavilySearchTool":
+                        account_info = await custom_search_tool.check_credits()
+                        if "error" in account_info:
+                            print(f"WARNING: Could not check Tavily API credits: {account_info['error']}")
+                        elif "credits_remaining" in account_info and account_info["credits_remaining"] < len(search_plan.searches):
+                            print(f"\nWARNING: Tavily API has only {account_info['credits_remaining']} credits remaining, but {len(search_plan.searches)} searches are planned.")
+                            print(f"Some searches may fail due to insufficient credits.")
+                except Exception as e:
+                    print(f"WARNING: Error checking API credits: {str(e)}")
 
             # Create a semaphore to limit concurrent searches
             semaphore = asyncio.Semaphore(max_concurrent_searches)
@@ -514,7 +595,38 @@ class ResearchManager:
                         return item
 
             num_completed = 0
-            tasks = [asyncio.create_task(rate_limited_search(item)) for item in search_plan.searches]
+
+            # Create tasks for each search query, but check for error state first
+            tasks = []
+
+            # Flag to track if we've already processed the first item
+            first_item_processed = False
+
+            for item in search_plan.searches:
+                # If we've already processed the first item and encountered an error, skip all remaining items
+                if first_item_processed and custom_search_tool and hasattr(custom_search_tool, 'has_error') and custom_search_tool.has_error():
+                    print(f"Skipping search for '{item.query}' because search tool is in error state")
+                    # Add a placeholder result for this item
+                    item.search_results = [{
+                        "title": f"Error: Search API Issue",
+                        "url": "",  # Empty URL as requested
+                        "content": f"Search skipped due to previous API error. No more searches will be performed."
+                    }]
+                    item.urls = []  # Empty URLs list
+                    continue
+
+                # Create a task for this search
+                tasks.append(asyncio.create_task(rate_limited_search(item)))
+
+                # Mark that we've processed the first item
+                if not first_item_processed:
+                    first_item_processed = True
+
+                    # If we're only supposed to process the first item and stop on error,
+                    # break after creating the first task
+                    if custom_search_tool and hasattr(custom_search_tool, 'stop_after_first_error') and custom_search_tool.stop_after_first_error:
+                        print("Only processing the first search query. Will stop after first error.")
+                        break
 
             # Set an overall timeout for all searches
             start_time = time.time()
@@ -552,7 +664,7 @@ class ResearchManager:
 
                     num_completed += 1
                     self.printer.update_item(
-                        "searching", f"Searching... {num_completed}/{len(tasks)} completed"
+                        "searching", f"Searching for '{search_plan.searches[0].query[:30]}{'...' if len(search_plan.searches[0].query) > 30 else ''}' and {len(search_plan.searches)-1} other queries... {num_completed}/{len(tasks)} completed"
                     )
             except Exception as e:
                 self.printer.update_item(
@@ -566,7 +678,12 @@ class ResearchManager:
                     if not task.done():
                         task.cancel()
 
-                self.printer.mark_item_done("searching")
+                # Update with a completion message
+                self.printer.update_item(
+                    "searching",
+                    f"Completed {len(tasks)} searches for '{search_plan.searches[0].query[:30]}{'...' if len(search_plan.searches[0].query) > 30 else ''}' and other queries",
+                    is_done=True
+                )
 
             return search_plan
 
@@ -601,7 +718,7 @@ class ResearchManager:
             # Truncate the query
             item.query = item.query[:max_query_length]
 
-        # No reason field anymore
+        # Create the search input with the actual query
         input = f"Search term: {item.query}"
 
         try:
@@ -613,9 +730,8 @@ class ResearchManager:
                 try:
                     # Use our custom search tool
                     tool_name = custom_search_tool.__class__.__name__
-                    print(f"Using {tool_name} for query: {item.query}")
 
-                    # Store the search tool name in the item
+                    # Store the search tool name in the item without printing
                     item.search_tool = tool_name
 
                     search_task = asyncio.create_task(custom_search_tool.search(item.query))
@@ -630,6 +746,23 @@ class ResearchManager:
                     # Store detailed search results if available
                     if hasattr(custom_search_tool, 'last_search_results') and custom_search_tool.last_search_results:
                         item.search_results = custom_search_tool.last_search_results
+
+                    # Check if the result contains an error message
+                    if result and result.startswith('[ERROR:'):
+                        # Create a mock search result with the error message
+                        error_message = result.strip('[]')
+                        item.search_results = [{
+                            "title": f"Error: {tool_name} API Issue",
+                            "url": "",  # Empty URL as requested
+                            "content": error_message
+                        }]
+                        item.urls = []  # Empty URLs list as requested
+                        print(f"Added error message to search results: {error_message}")
+
+                        # Set a flag in the search tool to indicate that we've encountered an error
+                        # This will be checked in _perform_searches to stop further searches
+                        if hasattr(custom_search_tool, 'set_error_state'):
+                            custom_search_tool.set_error_state(True)
 
                     # Limit the size of the search result to prevent memory issues
                     max_result_length = 5000  # Limit to 5000 characters
@@ -1182,9 +1315,12 @@ class ResearchManager:
                 search_questions["questions"].append(question_text)
             search_questions["count"] = len(search_questions["questions"])
 
+            # Get the total count of questions
+            total_count = len(search_plan.searches)
+
             self.printer.update_item(
-                "planning",
-                f"Added {len(new_searches)} questions from question generator (total: {len(search_plan.searches)})",
+                "total_questions",
+                f"Produced {total_count} unique questions",
                 is_done=True,
             )
 

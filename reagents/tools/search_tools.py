@@ -4,6 +4,7 @@ These provide more reliable search functionality than the default WebSearchTool.
 """
 
 import logging
+import aiohttp
 from typing import Optional, Dict, Any
 
 from reagents.config import EnvironmentConfig, AppConstants
@@ -23,10 +24,43 @@ class SerperSearchTool(BaseSearchTool):
         """
         super().__init__(api_key or EnvironmentConfig.get_serper_api_key(), "Serper")
         self.endpoint = "https://google.serper.dev/search"
+        self.account_endpoint = "https://google.serper.dev/account"
 
         # Validate API key format
         if self.api_key:
             self._validate_api_key()
+
+    async def check_credits(self) -> Dict[str, Any]:
+        """Check the available credits for the Serper API.
+
+        Returns:
+            A dictionary with the account information, including credits
+        """
+        if not self.api_key:
+            logger.error("Serper API key not found. Cannot check credits.")
+            return {"error": "No API key provided"}
+
+        headers = {
+            "X-API-KEY": self.api_key,
+            "Content-Type": "application/json"
+        }
+
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                async with session.get(self.account_endpoint, headers=headers) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"Serper API error when checking credits: {response.status} - {error_text}")
+                        return {"error": f"API returned status {response.status}"}
+
+                    data = await response.json()
+                    if "credit" in data:
+                        logger.info(f"Serper API credits remaining: {data['credit']}")
+                        print(f"Serper API credits remaining: {data['credit']}")
+                    return data
+        except Exception as e:
+            logger.error(f"Error checking Serper API credits: {str(e)}")
+            return {"error": str(e)}
 
     async def search(self, query: str, num_results: int = AppConstants.MAX_SEARCH_RESULTS) -> str:
         """Perform a search using the Serper API.
@@ -80,10 +114,6 @@ class SerperSearchTool(BaseSearchTool):
         total_length = 0
         truncated = False
 
-        # Clear previous search results
-        self.last_urls = []
-        self.last_search_results = []
-
         # Add organic results
         if "organic" in data and isinstance(data["organic"], list):
             for item in data["organic"]:
@@ -110,14 +140,6 @@ class SerperSearchTool(BaseSearchTool):
                     snippet = snippet[:297] + "..."
 
                 result_item = f"Title: {title}\nURL: {link}\nDescription: {snippet}\n"
-
-                # Store the URL and detailed search result
-                self.last_urls.append(link)
-                self.last_search_results.append({
-                    "title": title,
-                    "url": link,
-                    "description": snippet
-                })
 
                 # Check if adding this item would exceed the max_chars limit
                 if total_length + len(result_item) > max_chars:
@@ -208,10 +230,43 @@ class TavilySearchTool(BaseSearchTool):
         """
         super().__init__(api_key or EnvironmentConfig.get_tavily_api_key(), "Tavily")
         self.endpoint = "https://api.tavily.com/search"
+        self.account_endpoint = "https://api.tavily.com/account"
 
         # Validate API key format
         if self.api_key:
             self._validate_api_key(min_length=20, prefix="tvly-", check_alphanumeric=True)
+
+    async def check_credits(self) -> Dict[str, Any]:
+        """Check the available credits for the Tavily API.
+
+        Returns:
+            A dictionary with the account information, including credits
+        """
+        if not self.api_key:
+            logger.error("Tavily API key not found. Cannot check credits.")
+            return {"error": "No API key provided"}
+
+        headers = {
+            "X-API-Key": self.api_key,
+            "Content-Type": "application/json"
+        }
+
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                async with session.get(self.account_endpoint, headers=headers) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"Tavily API error when checking credits: {response.status} - {error_text}")
+                        return {"error": f"API returned status {response.status}"}
+
+                    data = await response.json()
+                    if "credits_used" in data and "credits_remaining" in data:
+                        logger.info(f"Tavily API credits remaining: {data['credits_remaining']}")
+                        print(f"Tavily API credits remaining: {data['credits_remaining']}")
+                    return data
+        except Exception as e:
+            logger.error(f"Error checking Tavily API credits: {str(e)}")
+            return {"error": str(e)}
 
     async def search(self, query: str, search_depth: str = AppConstants.MAX_SEARCH_DEPTH, max_results: int = AppConstants.MAX_SEARCH_RESULTS) -> str:
         """Perform a search using the Tavily API.

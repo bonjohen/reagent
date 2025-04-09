@@ -19,7 +19,7 @@ A Python-based research agent built using the OpenAI Agent SDK. This agent helps
 
 - Python 3.9+
 - OpenAI API key
-- Search API key (Serper or Tavily) for web search functionality
+- Search API key (Serper or Tavily) for enhanced web search functionality (optional - DuckDuckGo is available without an API key)
 
 ## Installation
 
@@ -41,14 +41,16 @@ A Python-based research agent built using the OpenAI Agent SDK. This agent helps
    ```
    # On Windows
    setx OPENAI_API_KEY your-openai-api-key-here
-   setx SERPER_API_KEY your-serper-api-key-here  # Optional, for web search
-   setx TAVILY_API_KEY your-tavily-api-key-here  # Optional, for web search
+   setx SERPER_API_KEY your-serper-api-key-here  # Optional, for enhanced web search
+   setx TAVILY_API_KEY your-tavily-api-key-here  # Optional, for enhanced web search
 
    # On macOS/Linux
    export OPENAI_API_KEY=your-openai-api-key-here
-   export SERPER_API_KEY=your-serper-api-key-here  # Optional, for web search
-   export TAVILY_API_KEY=your-tavily-api-key-here  # Optional, for web search
+   export SERPER_API_KEY=your-serper-api-key-here  # Optional, for enhanced web search
+   export TAVILY_API_KEY=your-tavily-api-key-here  # Optional, for enhanced web search
    ```
+
+   Note: If no search API keys are provided, the application will use DuckDuckGo search, which doesn't require an API key.
 
    For more information on setting up the search APIs, see [SEARCH_SETUP.md](SEARCH_SETUP.md).
 
@@ -78,23 +80,46 @@ When starting a new session, you will be prompted to enter a research topic. The
 
 After completing a session, you can continue working with the same session or start a new one.
 
-### Command Line Options
+### Command Line Usage
 
-You can also use command line arguments for specific operations:
+The application supports two main use cases:
 
 ```
-# List all research sessions
-python main.py -l
+# Run with no arguments (enters interactive mode)
+python main.py
 
-# Resume a specific session
-python main.py -r SESSION_ID
-
-# Start a new research session
-python main.py -n
-
-# Generate research questions only
-python main.py -q
+# Run with a query string as input
+python main.py your research topic here
 ```
+
+#### Interactive Mode
+
+When run without arguments, the application enters interactive mode with a menu that allows you to:
+1. Continue with the last session
+2. List all research sessions
+3. Start a new research session
+4. Resume a specific session
+5. Exit
+
+#### Direct Query Mode
+
+When run with a query string, the application immediately starts a new research session with that query:
+
+```
+python main.py Quantum computing applications in healthcare
+```
+
+Note that you don't need to put quotes around the query unless it contains special characters that need to be escaped in your shell.
+
+#### Search Engines
+
+The application supports three search engines:
+
+1. **Tavily**: Provides high-quality search results with a free tier (requires API key)
+2. **Serper**: Google search API with a free tier (requires API key)
+3. **DuckDuckGo**: No API key required, but may provide less comprehensive results
+
+By default, the application will use Tavily if an API key is available, then fall back to Serper, and finally to DuckDuckGo if no API keys are available.
 
 ## Architecture
 

@@ -93,33 +93,7 @@ async def test_questions_in_session_data():
 
 @pytest.mark.asyncio
 async def test_questions_only_flag():
-    """Test the --questions-only flag functionality."""
-    # This is more of a functional test that would be better tested manually
-    # Here we just verify that the generate_questions_only function works
-
-    # Create mocks for the Runner.run method and print
-    with patch('agents.Runner.run') as mock_run, \
-         patch('builtins.print') as mock_print:
-
-        # Set up the mock for the planner
-        planner_result = MagicMock()
-        planner_result.final_output = json.dumps({
-            "searches": [
-                "What is graphene?",
-                "How is graphene produced?",
-                "What are the applications of graphene?"
-            ]
-        })
-        mock_run.return_value = planner_result
-
-        # Import the function
-        from main import generate_questions_only
-
-        # Call the function
-        await generate_questions_only("graphene")
-
-        # Check that the mock was called
-        mock_run.assert_called_once()
-
-        # Check that print was called with the expected output
-        mock_print.assert_any_call("\nGenerated 3 research questions:\n")
+    """Test the questions generation functionality."""
+    # This test is now skipped since we've simplified the command-line interface
+    # and removed the questions-only flag
+    pytest.skip("The questions-only flag has been removed from the command-line interface")
