@@ -5,7 +5,9 @@ These provide more reliable search functionality than the default WebSearchTool.
 
 import logging
 import aiohttp
-from typing import Optional, Dict, Any
+import re
+from typing import Optional, Dict, Any, List
+from urllib.parse import quote_plus
 
 from reagents.config import EnvironmentConfig, AppConstants
 from reagents.tools.base_search_tool import BaseSearchTool
@@ -24,43 +26,10 @@ class SerperSearchTool(BaseSearchTool):
         """
         super().__init__(api_key or EnvironmentConfig.get_serper_api_key(), "Serper")
         self.endpoint = "https://google.serper.dev/search"
-        self.account_endpoint = "https://google.serper.dev/account"
 
         # Validate API key format
         if self.api_key:
             self._validate_api_key()
-
-    async def check_credits(self) -> Dict[str, Any]:
-        """Check the available credits for the Serper API.
-
-        Returns:
-            A dictionary with the account information, including credits
-        """
-        if not self.api_key:
-            logger.error("Serper API key not found. Cannot check credits.")
-            return {"error": "No API key provided"}
-
-        headers = {
-            "X-API-KEY": self.api_key,
-            "Content-Type": "application/json"
-        }
-
-        try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-                async with session.get(self.account_endpoint, headers=headers) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        logger.error(f"Serper API error when checking credits: {response.status} - {error_text}")
-                        return {"error": f"API returned status {response.status}"}
-
-                    data = await response.json()
-                    if "credit" in data:
-                        logger.info(f"Serper API credits remaining: {data['credit']}")
-                        print(f"Serper API credits remaining: {data['credit']}")
-                    return data
-        except Exception as e:
-            logger.error(f"Error checking Serper API credits: {str(e)}")
-            return {"error": str(e)}
 
     async def search(self, query: str, num_results: int = AppConstants.MAX_SEARCH_RESULTS) -> str:
         """Perform a search using the Serper API.
@@ -230,43 +199,10 @@ class TavilySearchTool(BaseSearchTool):
         """
         super().__init__(api_key or EnvironmentConfig.get_tavily_api_key(), "Tavily")
         self.endpoint = "https://api.tavily.com/search"
-        self.account_endpoint = "https://api.tavily.com/account"
 
         # Validate API key format
         if self.api_key:
             self._validate_api_key(min_length=20, prefix="tvly-", check_alphanumeric=True)
-
-    async def check_credits(self) -> Dict[str, Any]:
-        """Check the available credits for the Tavily API.
-
-        Returns:
-            A dictionary with the account information, including credits
-        """
-        if not self.api_key:
-            logger.error("Tavily API key not found. Cannot check credits.")
-            return {"error": "No API key provided"}
-
-        headers = {
-            "X-API-Key": self.api_key,
-            "Content-Type": "application/json"
-        }
-
-        try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-                async with session.get(self.account_endpoint, headers=headers) as response:
-                    if response.status != 200:
-                        error_text = await response.text()
-                        logger.error(f"Tavily API error when checking credits: {response.status} - {error_text}")
-                        return {"error": f"API returned status {response.status}"}
-
-                    data = await response.json()
-                    if "credits_used" in data and "credits_remaining" in data:
-                        logger.info(f"Tavily API credits remaining: {data['credits_remaining']}")
-                        print(f"Tavily API credits remaining: {data['credits_remaining']}")
-                    return data
-        except Exception as e:
-            logger.error(f"Error checking Tavily API credits: {str(e)}")
-            return {"error": str(e)}
 
     async def search(self, query: str, search_depth: str = AppConstants.MAX_SEARCH_DEPTH, max_results: int = AppConstants.MAX_SEARCH_RESULTS) -> str:
         """Perform a search using the Tavily API.
@@ -407,16 +343,133 @@ class TavilySearchTool(BaseSearchTool):
         return self._format_search_results(results, query, truncated, max_chars=max_chars)
 
 
+class DuckDuckGoSearchTool(BaseSearchTool):
+    """Search tool that uses DuckDuckGo for web search without requiring an API key."""
+
+    def __init__(self):
+        """Initialize the DuckDuckGo search tool."""
+        super().__init__(None, "DuckDuckGo")
+        self.endpoint = "https://duckduckgo.com/html/"
+        self.last_urls = []
+        self.last_search_results = []
+
+    async def check_credits(self) -> Dict[str, Any]:
+        """Check the available credits for DuckDuckGo.
+
+        DuckDuckGo doesn't require credits, so this always returns unlimited.
+
+        Returns:
+            A dictionary indicating unlimited credits
+        """
+        return {"credits_remaining": "unlimited", "status": "ok"}
+
+    async def search(self, query: str, max_results: int = 5) -> str:
+        """Perform a search using DuckDuckGo.
+
+        Args:
+            query: The search query
+            max_results: Maximum number of results to return
+
+        Returns:
+            A string containing the search results or an error message
+        """
+        # Construct the search URL
+        encoded_query = quote_plus(query)
+        url = f"https://html.duckduckgo.com/html/?q={encoded_query}"
+
+        # Set up headers to mimic a browser
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+
+        logger.info(f"Searching DuckDuckGo for: {query}")
+
+        try:
+            # Use aiohttp to make the request
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"DuckDuckGo search error: {response.status} - {error_text}")
+
+                        # Set the error state to prevent further searches
+                        self.set_error_state(True)
+
+                        # For 403 errors (common with DuckDuckGo), indicate that automated access is blocked
+                        if response.status == 403:
+                            error_message = f"ERROR: DuckDuckGo is blocking automated access. Search for '{query}' failed with status 403 Forbidden."
+                            # This is a critical error that should stop all further searches
+                            self.stop_after_first_error = True
+                        else:
+                            error_message = f"ERROR: Search for '{query}' failed with status {response.status}."
+
+                        return f"[{error_message}]"
+
+                    # Get the HTML content
+                    html = await response.text()
+
+                    # Extract search results using regex
+                    results = []
+                    self.last_urls = []
+                    self.last_search_results = []
+
+                    # Find titles
+                    title_matches = re.findall(r'<h2 class="result__title[^>]*>\s*<a[^>]*>(.*?)</a>', html)
+                    # Find URLs
+                    url_matches = re.findall(r'<h2 class="result__title[^>]*>\s*<a[^>]*href="([^"]+)"', html)
+                    # Find snippets
+                    snippet_matches = re.findall(r'<a class="result__snippet"[^>]*>(.*?)</a>', html)
+
+                    # Process the results
+                    for i in range(min(max_results, len(title_matches))):
+                        if i < len(title_matches) and i < len(url_matches):
+                            # Clean the title and snippet
+                            title = re.sub(r'<.*?>', '', title_matches[i]).strip()
+                            url = url_matches[i]
+                            snippet = re.sub(r'<.*?>', '', snippet_matches[i]).strip() if i < len(snippet_matches) else ""
+
+                            # Add to results list for formatting
+                            result_text = f"Title: {title}\nURL: {url}\nContent: {snippet}"
+                            results.append(result_text)
+
+                            # Store the URL for later use
+                            self.last_urls.append(url)
+
+                            # Store the detailed search result for later use
+                            self.last_search_results.append({
+                                "title": title,
+                                "url": url,
+                                "content": snippet
+                            })
+
+                    # If no results found
+                    if not results:
+                        logger.warning(f"No results found for query: {query}")
+                        return f"No results found for query: {query}"
+
+                    # Format the results
+                    return self._format_search_results(results, query, False)
+        except Exception as e:
+            logger.error(f"Error during DuckDuckGo search: {str(e)}")
+            # Set the error state to prevent further searches
+            self.set_error_state(True)
+            return f"[ERROR: Search for '{query}' failed: {str(e)}]"
+
+
 # Factory function to get the appropriate search tool based on available API keys
 def get_search_tool():
     """Get the best available search tool based on available API keys."""
-    # Prioritize Serper over Tavily since we're having issues with Tavily
-    if EnvironmentConfig.get_serper_api_key():
-        logger.info("Using Serper search tool")
-        return SerperSearchTool()
-    elif EnvironmentConfig.get_tavily_api_key():
-        logger.info("Using Tavily search tool")
-        return TavilySearchTool()
-    else:
-        logger.warning("No search API keys found. Search functionality will be limited.")
-        return None
+    # Use DuckDuckGo as the default search tool as requested
+    logger.info("Using DuckDuckGo search tool as default")
+    return DuckDuckGoSearchTool()
+
+    # Commented out previous implementation that prioritized API-based search tools
+    # if EnvironmentConfig.get_serper_api_key():
+    #     logger.info("Using Serper search tool")
+    #     return SerperSearchTool()
+    # elif EnvironmentConfig.get_tavily_api_key():
+    #     logger.info("Using Tavily search tool")
+    #     return TavilySearchTool()
+    # else:
+    #     logger.warning("No search API keys found. Using DuckDuckGo as fallback.")
+    #     return DuckDuckGoSearchTool()

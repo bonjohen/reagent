@@ -7,7 +7,7 @@ import aiohttp
 from typing import Dict, Any, List, Optional, Tuple
 
 # Import configuration
-from reagents.config import QuestionGeneratorConfig
+from reagents.config import AppConstants
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -25,14 +25,16 @@ class BaseSearchTool:
         self.api_key = api_key
         self.api_name = api_name
         self.endpoint = ""  # To be set by subclasses
-        self.error_state = False  # Flag to indicate if an error has occurred
-        self.stop_after_first_error = True  # Flag to indicate if we should stop after the first error
+        self.error_state = False
+        self.stop_after_first_error = False
+        self.last_urls = []
+        self.last_search_results = []
 
     def set_error_state(self, state: bool) -> None:
-        """Set the error state flag.
+        """Set the error state of the search tool.
 
         Args:
-            state: True if an error has occurred, False otherwise
+            state: True if the search tool is in an error state, False otherwise
         """
         self.error_state = state
         if state:
@@ -42,7 +44,7 @@ class BaseSearchTool:
         """Check if the search tool is in an error state.
 
         Returns:
-            True if an error has occurred, False otherwise
+            True if the search tool is in an error state, False otherwise
         """
         return self.error_state
 
@@ -100,21 +102,41 @@ class BaseSearchTool:
                     error_text = await response.text()
                     logger.error(f"{self.api_name} API error: {response.status} - {error_text}")
 
-                    # Handle authentication errors (401) or credit errors (400)
+                    # Handle authentication errors (401)
                     if response.status == 401:
                         error_message = f"ERROR: {self.api_name} API authentication failed. Invalid API key. Please check your {self.api_name} API key and try again."
                         # Set the error state to prevent further searches
                         self.set_error_state(True)
                         return None, f"[{error_message}]"
+
+                    # Handle rate limit errors (429) - common for Tavily when out of tokens
+                    elif response.status == 429:
+                        error_message = f"ERROR: {self.api_name} API returned 'Too Many Requests'. Your {self.api_name} account has likely run out of credits or hit rate limits. Please add more credits to your {self.api_name} account or try again later."
+                        # Set the error state to prevent further searches
+                        self.set_error_state(True)
+                        # This is a critical error that should stop all further searches
+                        self.stop_after_first_error = True
+                        return None, f"[{error_message}]"
+
+                    # Handle payment required errors (402)
+                    elif response.status == 402:
+                        error_message = f"ERROR: {self.api_name} API returned payment required. Your {self.api_name} account requires payment or has run out of credits. Please check your account status."
+                        # Set the error state to prevent further searches
+                        self.set_error_state(True)
+                        # This is a critical error that should stop all further searches
+                        self.stop_after_first_error = True
+                        return None, f"[{error_message}]"
+
+                    # Handle bad request errors (400) - could be "Not enough credits" for Serper
                     elif response.status == 400 and "Not enough credits" in error_text:
                         error_message = f"ERROR: {self.api_name} API returned 'Not enough credits'. Your {self.api_name} account has run out of credits. Please add more credits to your {self.api_name} account or use a different API key."
                         # Set the error state to prevent further searches
                         self.set_error_state(True)
                         # This is a critical error that should stop all further searches
-                        # We'll only process the first search query and stop
                         self.stop_after_first_error = True
                         return None, f"[{error_message}]"
 
+                    # Generic error for other status codes
                     return None, f"[Search for '{query}' failed: API returned status {response.status}]"
 
                 data = await response.json()
