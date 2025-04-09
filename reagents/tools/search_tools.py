@@ -6,7 +6,7 @@ These provide more reliable search functionality than the default WebSearchTool.
 import logging
 import aiohttp
 import re
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any
 from urllib.parse import quote_plus
 
 from reagents.config import EnvironmentConfig, AppConstants
@@ -456,20 +456,53 @@ class DuckDuckGoSearchTool(BaseSearchTool):
             return f"[ERROR: Search for '{query}' failed: {str(e)}]"
 
 
-# Factory function to get the appropriate search tool based on available API keys
+# Factory function to get the appropriate search tool based on configuration
 def get_search_tool():
-    """Get the best available search tool based on available API keys."""
-    # Use DuckDuckGo as the default search tool as requested
+    """Get the best available search tool based on configuration.
+
+    The function uses a JSON configuration to determine which search tool to use.
+    Configuration parameters:
+    - search_tool_name: Name of the search tool
+    - priority: Selection sequence for fallback logic (lower number = higher priority)
+    - is_enabled: Whether this search tool can be used
+    - is_blocked: Whether this tool is currently blocked (out of tokens, rate limited, etc.)
+    - next_check_datetime: When to check if the tool is available again
+
+    Returns:
+        BaseSearchTool: The selected search tool instance
+    """
+    # Define the search tools configuration
+    # Note: This configuration is not currently used but is defined for future implementation
+    _ = [
+        {
+            "search_tool_name": "Serper",
+            "priority": 1,  # Highest priority
+            "is_enabled": True,
+            "is_blocked": False,
+            "next_check_datetime": None
+        },
+        {
+            "search_tool_name": "Tavily",
+            "priority": 2,  # Medium priority
+            "is_enabled": True,
+            "is_blocked": False,
+            "next_check_datetime": None
+        },
+         {
+            "search_tool_name": "DuckDuckGo",
+            "priority": 3,  # Lowest priority but doesn't require API key
+            "is_enabled": True,
+            "is_blocked": False,
+            "next_check_datetime": None
+        }
+   ]
+
+    # The configuration is defined above but not used yet
+    # For now, just use DuckDuckGo as the default search tool
     logger.info("Using DuckDuckGo search tool as default")
     return DuckDuckGoSearchTool()
 
-    # Commented out previous implementation that prioritized API-based search tools
-    # if EnvironmentConfig.get_serper_api_key():
-    #     logger.info("Using Serper search tool")
-    #     return SerperSearchTool()
-    # elif EnvironmentConfig.get_tavily_api_key():
-    #     logger.info("Using Tavily search tool")
-    #     return TavilySearchTool()
-    # else:
-    #     logger.warning("No search API keys found. Using DuckDuckGo as fallback.")
-    #     return DuckDuckGoSearchTool()
+    # NOTE: The following code is commented out and would implement the selection logic
+    # based on the configuration, but is not being used as requested
+
+    # The selection logic would go here, but is not implemented yet

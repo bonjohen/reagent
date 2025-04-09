@@ -538,7 +538,7 @@ class ResearchManager:
 
             # Regular search process with API calls
             # Rate limiting configuration
-            max_concurrent_searches = 3  # Maximum number of concurrent searches
+            max_concurrent_searches = 2  # Maximum number of concurrent searches
             delay_between_searches = 1.0  # Delay in seconds between starting searches
             search_timeout = 60.0  # Timeout for each individual search in seconds
             overall_timeout = 300.0  # Overall timeout for all searches in seconds

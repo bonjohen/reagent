@@ -7,8 +7,10 @@ including model names, fallback options, and initialization functions.
 
 import logging
 import importlib.util
+import json
 import os
-from typing import Optional
+import datetime
+from typing import Dict, List, Optional, Any
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -17,14 +19,14 @@ class ModelConfig:
     """Configuration for OpenAI models used in the application."""
 
     # Primary models
-    WRITER_MODEL = "gpt-3.5-turbo"
-    SEARCH_MODEL = "gpt-3.5-turbo"
-    PLANNER_MODEL = "gpt-3.5-turbo"
+    WRITER_MODEL = "gpt-4o-mini" #"gpt-3.5-turbo"
+    SEARCH_MODEL = "gpt-4o-mini" #"gpt-3.5-turbo"
+    PLANNER_MODEL = "gpt-4o-mini" #"gpt-3.5-turbo"
 
     # Fallback models (used if primary models are unavailable)
-    WRITER_FALLBACK_MODEL = "gpt-3.5-turbo-0125"
-    SEARCH_FALLBACK_MODEL = "gpt-3.5-turbo-0125"
-    PLANNER_FALLBACK_MODEL = "gpt-3.5-turbo-0125"
+    WRITER_FALLBACK_MODEL = "gpt-4o-mini" #"gpt-3.5-turbo-0125"
+    SEARCH_FALLBACK_MODEL = "gpt-4o-mini" #"gpt-3.5-turbo-0125"
+    PLANNER_FALLBACK_MODEL = "gpt-4o-mini" #"gpt-3.5-turbo-0125"
 
     @classmethod
     def get_model_with_fallback(cls, model_type: str):
@@ -150,8 +152,8 @@ class QuestionGeneratorConfig:
     """Configuration for the question generator."""
 
     # Number of questions to generate
-    MIN_QUESTIONS = 40
-    MAX_QUESTIONS = 50
+    MIN_QUESTIONS = 3
+    MAX_QUESTIONS = 5
 
     # Whether to use search results to generate questions
     USE_SEARCH_RESULTS = True
