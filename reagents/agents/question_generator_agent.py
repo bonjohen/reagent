@@ -28,7 +28,13 @@ class QuestionGeneratorResult:
             questions: List of generated questions
             topic: The original research topic
         """
-        self.questions = questions
+        # Replace template variables in questions
+        self.questions = []
+        for question in questions:
+            # Replace {topic} with the actual topic
+            if "{topic}" in question and topic:
+                question = question.replace("{topic}", topic)
+            self.questions.append(question)
         self.topic = topic
 
     def to_dict(self) -> Dict[str, Any]:

@@ -165,6 +165,10 @@ class ResearchPersistence:
             IOError: If there was an error writing the file
             OSError: If there was an error with the file system operations
         """
+        # Update the count in search_questions to reflect the total number of questions
+        if "search_questions" in data and "questions" in data["search_questions"]:
+            data["search_questions"]["count"] = len(data["search_questions"]["questions"])
+
         # Get the final path where we want to save the data
         final_path = self._get_session_path(session_id)
 

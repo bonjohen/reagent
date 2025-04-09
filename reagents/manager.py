@@ -142,6 +142,13 @@ class ResearchManager:
                                 # Merge questions from search_questions into search_plan if available
                                 if search_questions and "questions" in search_questions and search_questions["questions"]:
                                     search_plan = self._merge_questions_into_search_plan(search_plan, search_questions)
+
+                                    # Update the session data with the merged questions count
+                                    if self._session_id:
+                                        session_data = self.persistence.get_session_data(self._session_id) or {}
+                                        if "search_questions" in session_data:
+                                            session_data["search_questions"]["count"] = len(session_data["search_questions"]["questions"])
+                                            self.persistence.save_session_data(self._session_id, session_data)
                         else:
                             # Invalid session, create a new search plan
                             search_plan = await self._plan_searches(query)
@@ -149,6 +156,13 @@ class ResearchManager:
                             # Merge questions from search_questions into search_plan if available
                             if search_questions and "questions" in search_questions and search_questions["questions"]:
                                 search_plan = self._merge_questions_into_search_plan(search_plan, search_questions)
+
+                                # Update the session data with the merged questions count
+                                if self._session_id:
+                                    session_data = self.persistence.get_session_data(self._session_id) or {}
+                                    if "search_questions" in session_data:
+                                        session_data["search_questions"]["count"] = len(session_data["search_questions"]["questions"])
+                                        self.persistence.save_session_data(self._session_id, session_data)
                     else:
                         # No session ID provided, create a new search plan
                         search_plan = await self._plan_searches(query)
@@ -156,6 +170,13 @@ class ResearchManager:
                         # Merge questions from search_questions into search_plan if available
                         if search_questions and "questions" in search_questions and search_questions["questions"]:
                             search_plan = self._merge_questions_into_search_plan(search_plan, search_questions)
+
+                            # Update the session data with the merged questions count
+                            if self._session_id:
+                                session_data = self.persistence.get_session_data(self._session_id) or {}
+                                if "search_questions" in session_data:
+                                    session_data["search_questions"]["count"] = len(session_data["search_questions"]["questions"])
+                                    self.persistence.save_session_data(self._session_id, session_data)
 
                         # Save the search plan and get a new session ID
                         self._session_id = self.persistence.save_search_plan(
@@ -230,6 +251,10 @@ class ResearchManager:
                                                     "question": question_text,
                                                     "results": []
                                                 }
+
+                            # Update the count in search_questions to reflect the total number of questions
+                            if "search_questions" in session_data and "questions" in session_data["search_questions"]:
+                                session_data["search_questions"]["count"] = len(session_data["search_questions"]["questions"])
 
                             # Save the updated session data
                             session_data["status"] = "searched"
@@ -1150,6 +1175,9 @@ class ResearchManager:
         existing_searches = search_plan.searches
         existing_queries = [item.query.lower() for item in existing_searches]
 
+        # Get the topic from search_questions
+        topic = search_questions.get("topic", "")
+
         # Add questions from search_questions that aren't already in the plan
         new_searches = []
         for question in search_questions["questions"]:
@@ -1159,6 +1187,10 @@ class ResearchManager:
             else:
                 question_text = question
 
+            # Replace template variables with actual values
+            if "{topic}" in question_text and topic:
+                question_text = question_text.replace("{topic}", topic)
+
             # Add the question if it's not already in the plan
             if question_text.lower() not in existing_queries:
                 new_searches.append(WebSearchItem(query=question_text))
@@ -1166,6 +1198,21 @@ class ResearchManager:
         # Combine the searches
         if new_searches:
             search_plan.searches.extend(new_searches)
+
+            # Update the count in search_questions to reflect the total number of questions
+            # This ensures the count is accurate after merging
+            # We need to add the new questions to search_questions as well
+            # Make sure to replace any template variables in the questions
+            topic = search_questions.get("topic", "")
+            for question in new_searches:
+                question_text = question.query
+                # The template variables should already be replaced in the query,
+                # but we'll check again just to be safe
+                if "{topic}" in question_text and topic:
+                    question_text = question_text.replace("{topic}", topic)
+                search_questions["questions"].append(question_text)
+            search_questions["count"] = len(search_questions["questions"])
+
             self.printer.update_item(
                 "planning",
                 f"Added {len(new_searches)} questions from question generator (total: {len(search_plan.searches)})",
