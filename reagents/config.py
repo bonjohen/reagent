@@ -129,6 +129,18 @@ class AppConstants:
     MAX_REPORT_LENGTH = 10000  # Maximum length of a report in characters
     MAX_SEARCH_RESULT_LENGTH = 8000  # Maximum combined length of search results
 
+
+# Question generator configuration
+class QuestionGeneratorConfig:
+    """Configuration for the question generator."""
+
+    # Number of questions to generate
+    MIN_QUESTIONS = 40
+    MAX_QUESTIONS = 50
+
+    # Whether to use search results to generate questions
+    USE_SEARCH_RESULTS = True
+
     # Timeouts
     API_TIMEOUT_SECONDS = 30  # Timeout for API calls
 

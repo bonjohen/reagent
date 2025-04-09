@@ -201,3 +201,11 @@
 - **Impact**: Prevents data corruption with concurrent access
 - **Recurrence**: Repeat Incident (8)
 
+## 28. TypeError in Question Generation [FIXED 04-07-2025]
+- **Location**: reagents/agents/question_generator_agent.py
+- **Bug**: Incorrect use of `await` with non-awaitable object: `result = Runner.run_streamed(agent, topic)`
+- **Fix**: Added comments clarifying that Runner.run_streamed returns a non-awaitable object
+- **Impact**: Prevents TypeError "object RunResultStreaming can't be used in 'await' expression"
+- **Recurrence**: Repeat Incident (2)
+- **Test**: Existing tests already handle this correctly as they mock Runner.run_streamed
+

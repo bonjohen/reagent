@@ -110,13 +110,56 @@ def display_menu(last_session_id: Optional[str] = None) -> str:
     print("  2. List all research sessions")
     print("  3. Start a new research session")
     print("  4. Resume a specific session")
-    print("  5. Exit")
+    print("  5. Generate research questions only")
+    print("  6. Exit")
 
     while True:
-        choice = input("\nEnter your choice (1-5): ").strip()
-        if choice in ["1", "2", "3", "4", "5"]:
+        choice = input("\nEnter your choice (1-6): ").strip()
+        if choice in ["1", "2", "3", "4", "5", "6"]:
             return choice
-        print("Invalid choice. Please enter a number between 1 and 5.")
+        print("Invalid choice. Please enter a number between 1 and 6.")
+
+async def generate_questions_only(topic: str) -> None:
+    """Generate research questions for a topic without running the full research process.
+
+    Args:
+        topic: The research topic to generate questions for
+    """
+    try:
+        # Validate input
+        if not topic or topic.strip() == "":
+            print("Error: Please provide a non-empty research topic.")
+            return
+
+        # Check for very short or likely invalid topics
+        if len(topic.strip()) < 5:
+            print("Error: Topic is too short. Please provide a more detailed research topic.")
+            return
+
+        # Check for topics that are just punctuation or special characters
+        if all(not c.isalnum() for c in topic.strip()):
+            print("Error: Topic must contain at least one letter or number.")
+            return
+
+        topic = topic.strip()
+
+        # Create a research manager
+        manager = ResearchManager()
+
+        # Generate questions
+        print(f"\nGenerating research questions for topic: {topic}\n")
+        question_result = await manager._generate_questions(topic)
+
+        # Display the results
+        if question_result.questions:
+            print(f"\nGenerated {len(question_result.questions)} research questions:\n")
+            for i, question in enumerate(question_result.questions, 1):
+                print(f"{i}. {question}")
+        else:
+            print("\nNo questions were generated. Please try a different topic.")
+
+    except Exception as e:
+        print(f"Error generating questions: {str(e)}")
 
 async def run_research_session(session_id: Optional[str] = None, query: Optional[str] = None) -> Optional[str]:
     """Run a research session with the given session ID and query.
@@ -142,6 +185,13 @@ async def run_research_session(session_id: Optional[str] = None, query: Optional
             print(f"Resuming research session: {session_id}")
             print(f"Original query: {query}")
 
+            # Create and run the research manager with the existing session ID
+            manager = ResearchManager(session_id=session_id)
+            await manager.run(query)
+
+            # Return the session ID that was used
+            return manager.session_id
+
         # If we don't have a session ID, we need a query
         elif not session_id and not query:
             # Get a new query from the user
@@ -164,9 +214,25 @@ async def run_research_session(session_id: Optional[str] = None, query: Optional
 
             query = query.strip()
 
-        # Create and run the research manager
-        manager = ResearchManager(session_id=session_id)
+        # For new sessions, use the same approach as command-line mode
+        # Create a ResearchManager
+        manager = ResearchManager()
+
+        # Create a persistence instance to generate a session ID
+        persistence = ResearchPersistence()
+        session_id = persistence._generate_session_id(query)
+
+        # Set the session ID in the manager
+        manager.session_id = session_id
+
+        # Run the research process
         await manager.run(query)
+
+        # Display the location of the generated file
+        file_path = os.path.join("research_data", f"{session_id}.json")
+        print("\n" + "=" * 80)
+        print(f"RESEARCH DOCUMENT CREATED AT:\n{os.path.abspath(file_path)}")
+        print("=" * 80)
 
         # Return the session ID that was used or created
         return manager.session_id
@@ -199,13 +265,40 @@ async def main() -> None:
     parser.add_argument("-r", "--resume", help="Resume a previous research session by ID")
     parser.add_argument("-l", "--list", action="store_true", help="List all research sessions")
     parser.add_argument("-n", "--new", action="store_true", help="Start a new research session")
+    parser.add_argument("-q", "--questions-only", action="store_true", help="Generate research questions only without executing the full research process")
+    parser.add_argument("search_terms", nargs="*", help="Optional search terms for a new research session")
     args = parser.parse_args()
 
     print("Research Agent powered by OpenAI Agent SDK")
     print("------------------------------------------")
 
+    # If search terms are provided, use them for a new research session
+    if args.search_terms:
+        search_query = " ".join(args.search_terms)
+        print(f"Starting new research session with query: {search_query}")
+
+        # Create a ResearchManager directly to get the session ID
+        manager = ResearchManager()
+
+        # Create a persistence instance to generate a session ID
+        persistence = ResearchPersistence()
+        session_id = persistence._generate_session_id(search_query)
+
+        # Set the session ID in the manager
+        manager.session_id = session_id
+
+        # Run the research process
+        await manager.run(search_query)
+
+        # Display the location of the generated file
+        file_path = os.path.join("research_data", f"{session_id}.json")
+        print("\n" + "=" * 80)
+        print(f"RESEARCH DOCUMENT CREATED AT:\n{os.path.abspath(file_path)}")
+        print("=" * 80)
+        return
+
     # If specific command line arguments are provided, run in non-interactive mode
-    if args.list or args.resume or args.new:
+    if args.list or args.resume or args.new or args.questions_only:
         # Handle listing sessions
         if args.list:
             list_sessions()
@@ -219,6 +312,12 @@ async def main() -> None:
         # Handle starting a new session
         if args.new:
             await run_research_session()
+            return
+
+        # Handle generating questions only
+        if args.questions_only:
+            topic = input("Enter a research topic: ").strip()
+            await generate_questions_only(topic)
             return
 
     # Otherwise, run in interactive mode with a menu
@@ -247,7 +346,14 @@ async def main() -> None:
             else:
                 print("No session ID provided.")
 
-        elif choice == "5":  # Exit
+        elif choice == "5":  # Generate questions only
+            topic = input("\nEnter a research topic: ").strip()
+            if topic:
+                await generate_questions_only(topic)
+            else:
+                print("No topic provided.")
+
+        elif choice == "6":  # Exit
             print("\nExiting Research Agent. Goodbye!")
             break
 

@@ -16,30 +16,26 @@ class TestPlannerAgent:
         """Test the WebSearchItem model."""
         # Create a WebSearchItem instance
         item = WebSearchItem(
-            query="test query",
-            reason="test reason"
+            query="test query"
         )
-        
+
         # Check the fields
         assert item.query == "test query"
-        assert item.reason == "test reason"
 
     def test_web_search_plan_model(self):
         """Test the WebSearchPlan model."""
         # Create a WebSearchPlan instance
         plan = WebSearchPlan(
             searches=[
-                WebSearchItem(query="query 1", reason="reason 1"),
-                WebSearchItem(query="query 2", reason="reason 2")
+                WebSearchItem(query="query 1"),
+                WebSearchItem(query="query 2")
             ]
         )
-        
+
         # Check the fields
         assert len(plan.searches) == 2
         assert plan.searches[0].query == "query 1"
-        assert plan.searches[0].reason == "reason 1"
         assert plan.searches[1].query == "query 2"
-        assert plan.searches[1].reason == "reason 2"
 
     def test_from_response_json_format(self):
         """Test parsing a JSON response."""
@@ -51,10 +47,10 @@ class TestPlannerAgent:
             ]
         }
         response = json.dumps(response_data)
-        
+
         # Parse the response
         plan = WebSearchPlan.from_response(response)
-        
+
         # Check the parsed data
         assert len(plan.searches) == 2
         assert plan.searches[0].query == "query 1"
@@ -72,10 +68,10 @@ class TestPlannerAgent:
             ]
         }
         response = f"```json\n{json.dumps(response_data)}\n```"
-        
+
         # Parse the response
         plan = WebSearchPlan.from_response(response)
-        
+
         # Check the parsed data
         assert len(plan.searches) == 2
         assert plan.searches[0].query == "query 1"
@@ -93,10 +89,10 @@ class TestPlannerAgent:
             ]
         }
         response = f"```\n{json.dumps(response_data)}\n```"
-        
+
         # Parse the response
         plan = WebSearchPlan.from_response(response)
-        
+
         # Check the parsed data
         assert len(plan.searches) == 2
         assert plan.searches[0].query == "query 1"
@@ -108,13 +104,13 @@ class TestPlannerAgent:
         """Test parsing an invalid JSON response."""
         # Create an invalid JSON response
         response = "This is not valid JSON"
-        
+
         # Parse the response - should create a fallback plan
         plan = WebSearchPlan.from_response(response)
-        
+
         # Check that a fallback plan was created
         assert len(plan.searches) > 0
-        assert "error" in plan.searches[0].query.lower() or "error" in plan.searches[0].reason.lower()
+        assert "error" in plan.searches[0].query.lower()
 
     def test_from_response_missing_searches(self):
         """Test parsing a JSON response with missing searches field."""
@@ -124,13 +120,13 @@ class TestPlannerAgent:
             # Missing searches field
         }
         response = json.dumps(response_data)
-        
+
         # Parse the response - should create a fallback plan
         plan = WebSearchPlan.from_response(response)
-        
+
         # Check that a fallback plan was created
         assert len(plan.searches) > 0
-        assert "error" in plan.searches[0].query.lower() or "error" in plan.searches[0].reason.lower()
+        assert "error" in plan.searches[0].query.lower()
 
     def test_from_response_invalid_searches_type(self):
         """Test parsing a JSON response with searches not being a list."""
@@ -139,13 +135,13 @@ class TestPlannerAgent:
             "searches": "not a list"
         }
         response = json.dumps(response_data)
-        
+
         # Parse the response - should create a fallback plan
         plan = WebSearchPlan.from_response(response)
-        
+
         # Check that a fallback plan was created
         assert len(plan.searches) > 0
-        assert "error" in plan.searches[0].query.lower() or "error" in plan.searches[0].reason.lower()
+        assert "error" in plan.searches[0].query.lower()
 
     def test_from_response_invalid_search_item(self):
         """Test parsing a JSON response with invalid search items."""
@@ -158,38 +154,38 @@ class TestPlannerAgent:
             ]
         }
         response = json.dumps(response_data)
-        
+
         # Parse the response - should create a fallback plan
         plan = WebSearchPlan.from_response(response)
-        
+
         # Check that a fallback plan was created
         assert len(plan.searches) > 0
-        assert "error" in plan.searches[0].query.lower() or "error" in plan.searches[0].reason.lower()
+        assert "error" in plan.searches[0].query.lower()
 
     def test_json_repair(self):
         """Test the JSON repair functionality."""
         # Test various common JSON errors
-        
+
         # Single quotes instead of double quotes
-        invalid_json = "{'searches': [{'query': 'query 1', 'reason': 'reason 1'}]}"
+        invalid_json = "{'searches': [{'query': 'query 1'}]}"
         repaired = WebSearchPlan._attempt_json_repair(invalid_json)
         # Should be valid JSON now
         data = json.loads(repaired)
         assert "searches" in data
         assert len(data["searches"]) == 1
         assert data["searches"][0]["query"] == "query 1"
-        
+
         # Unquoted keys
-        invalid_json = "{searches: [{query: \"query 1\", reason: \"reason 1\"}]}"
+        invalid_json = "{searches: [{query: \"query 1\"}]}"
         repaired = WebSearchPlan._attempt_json_repair(invalid_json)
         # Should be valid JSON now
         data = json.loads(repaired)
         assert "searches" in data
         assert len(data["searches"]) == 1
         assert data["searches"][0]["query"] == "query 1"
-        
+
         # Trailing commas
-        invalid_json = "{\"searches\": [{\"query\": \"query 1\", \"reason\": \"reason 1\", }]}"
+        invalid_json = "{\"searches\": [{\"query\": \"query 1\", }]}"
         repaired = WebSearchPlan._attempt_json_repair(invalid_json)
         # Should be valid JSON now
         data = json.loads(repaired)

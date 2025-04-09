@@ -52,37 +52,57 @@ class ResearchPersistence:
 
     def save_search_results(self, session_id: str, search_results: List[str]) -> None:
         """
-        Save search results to disk.
+        DEPRECATED: This method is deprecated. Use save_search_plan instead.
+        Search results are now stored in the search_plan structure.
 
         Args:
             session_id: The research session ID
             search_results: The search results
         """
+        # This method is kept for backward compatibility
+        # but it doesn't do anything anymore
+        pass
+
+    def save_search_plan(self, session_id: str, search_plan: Dict[str, Any]) -> None:
+        """
+        Save the search plan with results to disk.
+
+        Args:
+            session_id: The research session ID
+            search_plan: The search plan with results
+        """
         data = self._load_session_data(session_id)
         if data:
-            data["search_results"] = search_results
+            data["search_plan"] = search_plan
             data["status"] = "searched"
             self._save_session_data(session_id, data)
 
     def save_report(self, session_id: str, report_data: Dict[str, Any]) -> None:
         """
-        Save a final report to disk.
+        Mark the research as completed without adding a report section.
 
         Args:
             session_id: The research session ID
-            report_data: The report data
+            report_data: The report data (not used)
         """
         data = self._load_session_data(session_id)
         if data:
-            # Skip saving the report section to avoid large JSON files
-            # Just save the short_summary and follow_up_questions
-            minimal_report = {
-                "short_summary": report_data.get("short_summary", "Report generated"),
-                "follow_up_questions": report_data.get("follow_up_questions", [])
-            }
-            data["report"] = minimal_report
+            # Don't save the report section at all
+            # Just update the status to completed
+            if "report" in data:
+                del data["report"]
             data["status"] = "completed"
             self._save_session_data(session_id, data)
+
+    def save_session_data(self, session_id: str, data: Dict[str, Any]) -> None:
+        """
+        Save data for a research session.
+
+        Args:
+            session_id: The research session ID
+            data: The session data to save
+        """
+        self._save_session_data(session_id, data)
 
     def get_session_data(self, session_id: str) -> Optional[Dict[str, Any]]:
         """

@@ -80,6 +80,10 @@ class SerperSearchTool(BaseSearchTool):
         total_length = 0
         truncated = False
 
+        # Clear previous search results
+        self.last_urls = []
+        self.last_search_results = []
+
         # Add organic results
         if "organic" in data and isinstance(data["organic"], list):
             for item in data["organic"]:
@@ -106,6 +110,14 @@ class SerperSearchTool(BaseSearchTool):
                     snippet = snippet[:297] + "..."
 
                 result_item = f"Title: {title}\nURL: {link}\nDescription: {snippet}\n"
+
+                # Store the URL and detailed search result
+                self.last_urls.append(link)
+                self.last_search_results.append({
+                    "title": title,
+                    "url": link,
+                    "description": snippet
+                })
 
                 # Check if adding this item would exceed the max_chars limit
                 if total_length + len(result_item) > max_chars:

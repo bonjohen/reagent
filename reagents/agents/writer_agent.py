@@ -7,8 +7,8 @@ from writer_agent_updated.py, writer_agent_fixed.py, and writer_agent_improved.p
 import re
 import json
 import logging
-from typing import List, Optional
-from pydantic import BaseModel, Field, model_validator
+from typing import Optional
+from pydantic import BaseModel, Field
 
 from agents import Agent
 from reagents.config import ModelConfig
@@ -36,9 +36,7 @@ Follow these guidelines:
 
 Your output MUST be in the following JSON format:
 {
-    "short_summary": "A brief 1-2 sentence summary of the report",
-    "markdown_report": "The full report in markdown format",
-    "follow_up_questions": ["3-5 questions for further research"]
+    "short_summary": "A brief 1-2 sentence summary of the report"
 }
 
 CRITICAL INSTRUCTIONS:
@@ -48,27 +46,16 @@ CRITICAL INSTRUCTIONS:
 4. The entire response should be a valid JSON object that can be parsed directly
 5. Do not include any explanations or notes outside the JSON structure
 6. Make sure all quotes and brackets are properly balanced
-7. The markdown_report field should contain properly formatted markdown
-8. follow_up_questions must be an array of strings
 
 Example of correct response format:
-{"short_summary":"This is a summary.","markdown_report":"# Title\n\nContent here.","follow_up_questions":["Question 1?","Question 2?","Question 3?"]}
+{"short_summary":"This is a summary."}
 """
 
 class ReportData(BaseModel):
     """Data model for research reports."""
 
     short_summary: str = Field(..., description="A brief summary of the report")
-    markdown_report: str = Field(..., description="The full report in markdown format")
-    follow_up_questions: List[str] = Field(default_factory=list, description="Follow-up questions for further research")
     model: Optional[str] = Field(None, description="The model used to generate the report")
-
-    @model_validator(mode='after')
-    def validate_follow_up_questions(self) -> 'ReportData':
-        """Ensure follow_up_questions is a list of strings."""
-        if not isinstance(self.follow_up_questions, list):
-            self.follow_up_questions = []
-        return self
 
     @classmethod
     def from_response(cls, response: str, model: str = None) -> 'ReportData':
@@ -148,27 +135,11 @@ class ReportData(BaseModel):
                 # Create a short summary from the title
                 short_summary = f"Report on {title}"
 
-                # Check if the response looks like markdown
-                if re.search(r'#\s+', response) or re.search(r'\*\*.*?\*\*', response) or re.search(r'\n-\s+', response):
-                    logger.debug(f"[{model}] Response appears to be markdown, using as markdown_report")
-                    markdown_report = response
-                else:
-                    logger.debug(f"[{model}] Response does not appear to be markdown, wrapping in markdown")
-                    markdown_report = f"# {title}\n\n{response}"
-
-                # Use default follow-up questions
-                follow_up_questions = [
-                    "What additional information would you like about this topic?",
-                    "Are there specific aspects of this topic you want to explore further?",
-                    "Would you like more details about any particular section?",
-                    "Are there related topics you would like to research?",
-                    "Do you have any questions about the information presented?"
-                ]
+                # We don't need to check for markdown or create follow-up questions anymore
+                logger.debug(f"[{model}] Skipping markdown and follow-up questions extraction")
 
                 data = {
-                    "short_summary": short_summary,
-                    "markdown_report": markdown_report,
-                    "follow_up_questions": follow_up_questions
+                    "short_summary": short_summary
                 }
                 logger.debug(f"[{model}] Created report from raw content")
 
@@ -216,9 +187,7 @@ class ReportData(BaseModel):
             # Create a fallback report if parsing fails
             logger.debug(f"[{model}] Creating fallback error report")
             fallback_data = {
-                'short_summary': f"Error parsing report: {str(e)}",
-                'markdown_report': f"# Raw json:\n\n```json\n{json_str}\n```",
-                'follow_up_questions': ["Would you like to try a more specific query?", "Would you like to try a different topic?", "Would you like to see the raw search results?"]
+                'short_summary': f"Error parsing report: {str(e)}"
             }
             logger.warning(f"[{model}] Error parsing report JSON: {str(e)}\nFalling back to error report.")
 
@@ -248,19 +217,8 @@ class ReportData(BaseModel):
         Returns:
             The repaired JSON string
         """
-        # First, check if the JSON is missing the follow_up_questions field
-        if '"markdown_report"' in json_str and '"follow_up_questions"' not in json_str:
-            # Add default follow_up_questions before the closing brace
-            if json_str.rstrip().endswith('}'):
-                default_questions = ',\n    "follow_up_questions": [\n'
-                default_questions += '        "What additional information would you like about this topic?",\n'
-                default_questions += '        "Are there specific aspects of this topic you want to explore further?",\n'
-                default_questions += '        "Would you like more details about any particular section?",\n'
-                default_questions += '        "Are there related topics you would like to research?",\n'
-                default_questions += '        "Do you have any questions about the information presented?"\n'
-                default_questions += '    ]\n}'
-
-                json_str = json_str.rstrip()[:-1] + default_questions
+        # We don't need to add follow_up_questions anymore
+        # Just continue with the repair process
 
         # Apply a series of regex replacements to fix common issues
         # These are ordered from most specific to most general
@@ -486,19 +444,15 @@ class ReportData(BaseModel):
                 logger.debug(f"[{model}] Missing short_summary field in parsed JSON")
                 data["short_summary"] = "Summary not provided"
 
-            if "markdown_report" not in data:
-                logger.debug(f"[{model}] Missing markdown_report field in parsed JSON")
-                data["markdown_report"] = "Report content not provided"
+            # Remove markdown_report if present
+            if "markdown_report" in data:
+                logger.debug(f"[{model}] Removing markdown_report field from parsed JSON")
+                data.pop("markdown_report")
 
-            if "follow_up_questions" not in data or not data["follow_up_questions"]:
-                logger.debug(f"[{model}] Missing or empty follow_up_questions field in parsed JSON")
-                data["follow_up_questions"] = [
-                    "What additional information would you like about this topic?",
-                    "Are there specific aspects of this topic you want to explore further?",
-                    "Would you like more details about any particular section?",
-                    "Are there related topics you would like to research?",
-                    "Do you have any questions about the information presented?"
-                ]
+            # Remove follow_up_questions if present
+            if "follow_up_questions" in data:
+                logger.debug(f"[{model}] Removing follow_up_questions field from parsed JSON")
+                data.pop("follow_up_questions")
 
             return data
         except json.JSONDecodeError as json_err:
@@ -519,19 +473,15 @@ class ReportData(BaseModel):
                     logger.debug(f"[{model}] Missing short_summary field in repaired JSON")
                     data["short_summary"] = "Summary not provided"
 
-                if "markdown_report" not in data:
-                    logger.debug(f"[{model}] Missing markdown_report field in repaired JSON")
-                    data["markdown_report"] = "Report content not provided"
+                # Remove markdown_report if present
+                if "markdown_report" in data:
+                    logger.debug(f"[{model}] Removing markdown_report field from repaired JSON")
+                    data.pop("markdown_report")
 
-                if "follow_up_questions" not in data or not data["follow_up_questions"]:
-                    logger.debug(f"[{model}] Missing or empty follow_up_questions field in repaired JSON")
-                    data["follow_up_questions"] = [
-                        "What additional information would you like about this topic?",
-                        "Are there specific aspects of this topic you want to explore further?",
-                        "Would you like more details about any particular section?",
-                        "Are there related topics you would like to research?",
-                        "Do you have any questions about the information presented?"
-                    ]
+                # Remove follow_up_questions if present
+                if "follow_up_questions" in data:
+                    logger.debug(f"[{model}] Removing follow_up_questions field from repaired JSON")
+                    data.pop("follow_up_questions")
 
                 return data
             except json.JSONDecodeError:
@@ -540,13 +490,9 @@ class ReportData(BaseModel):
                 # Extract fields one by one
                 short_summary = cls._extract_json_field(json_str, "short_summary")
                 logger.debug(f"[{model}] Extracted short_summary: {short_summary}")
-                markdown_report = cls._extract_json_field(json_str, "markdown_report")
-                logger.debug(f"[{model}] Extracted markdown_report: {markdown_report}")
-                follow_up_questions = cls._extract_json_field(json_str, "follow_up_questions")
-                logger.debug(f"[{model}] Extracted follow_up_questions: {follow_up_questions}")
 
                 # If we couldn't extract any fields, try to create them from the content
-                if short_summary is None and markdown_report is None and follow_up_questions is None:
+                if short_summary is None:
                     logger.debug(f"[{model}] Could not extract any fields, trying to create them from content")
 
                     # Try to find a title in the content
@@ -558,70 +504,29 @@ class ReportData(BaseModel):
                         title = "Research Report"
                         logger.debug(f"[{model}] No title found, using default: {title}")
 
-                    # Use the entire content as the markdown report
-                    markdown_report = json_str
-                    logger.debug(f"[{model}] Using entire content as markdown_report")
+                    # We don't need to extract markdown_report anymore
+                    logger.debug(f"[{model}] Skipping markdown_report extraction")
 
                     # Create a short summary from the title
                     short_summary = f"Report on {title}"
                     logger.debug(f"[{model}] Created short_summary: {short_summary}")
 
-                    # Use default follow-up questions
-                    follow_up_questions = [
-                        "What additional information would you like about this topic?",
-                        "Are there specific aspects of this topic you want to explore further?",
-                        "Would you like more details about any particular section?",
-                        "Are there related topics you would like to research?",
-                        "Do you have any questions about the information presented?"
-                    ]
-                    logger.debug(f"[{model}] Using default follow_up_questions")
-
                     return {
-                        "short_summary": short_summary,
-                        "markdown_report": markdown_report,
-                        "follow_up_questions": follow_up_questions
+                        "short_summary": short_summary
                     }
 
-                # If we couldn't extract follow_up_questions, use default ones
-                if follow_up_questions is None and (short_summary is not None or markdown_report is not None):
-                    follow_up_questions = [
-                        "What additional information would you like about this topic?",
-                        "Are there specific aspects of this topic you want to explore further?",
-                        "Would you like more details about any particular section?",
-                        "Are there related topics you would like to research?",
-                        "Do you have any questions about the information presented?"
-                    ]
-                    logger.debug(f"[{model}] Using default follow_up_questions")
+                # No follow_up_questions needed
 
-                # If we couldn't extract short_summary but have markdown_report, create one
-                if short_summary is None and markdown_report is not None:
-                    # Try to find a title in the markdown report
-                    title_match = re.search(r'#\s*(.*?)\n', markdown_report)
-                    if title_match:
-                        title = title_match.group(1).strip()
-                        short_summary = f"Report on {title}"
-                    else:
-                        short_summary = "Research Report"
-                    logger.debug(f"[{model}] Created short_summary: {short_summary}")
+                # If we couldn't extract short_summary, create a default one
+                if short_summary is None:
+                    short_summary = "Research Report"
+                    logger.debug(f"[{model}] Created default short_summary")
 
-                # If we couldn't extract markdown_report but have short_summary, create one
-                if markdown_report is None and short_summary is not None:
-                    markdown_report = f"# {short_summary}\n\nNo detailed report content available."
-                    logger.debug(f"[{model}] Created markdown_report from short_summary")
-
-                # Check if we have at least the minimum required fields
-                if short_summary is not None and markdown_report is not None:
-                    logger.debug(f"[{model}] Field-by-field extraction partially successful")
+                # Check if we have the required field
+                if short_summary is not None:
+                    logger.debug(f"[{model}] Field-by-field extraction successful")
                     return {
-                        "short_summary": short_summary,
-                        "markdown_report": markdown_report,
-                        "follow_up_questions": follow_up_questions or [
-                            "What additional information would you like about this topic?",
-                            "Are there specific aspects of this topic you want to explore further?",
-                            "Would you like more details about any particular section?",
-                            "Are there related topics you would like to research?",
-                            "Do you have any questions about the information presented?"
-                        ]
+                        "short_summary": short_summary
                     }
                 else:
                     logger.debug(f"[{model}] Field-by-field extraction failed completely")

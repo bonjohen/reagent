@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 import traceback
-from typing import Optional
+from typing import Optional, List
 
 from rich.console import Console
 
@@ -12,6 +12,8 @@ from agents import Runner, custom_span, gen_trace_id, trace
 from reagents.agents.planner_agent import WebSearchItem, WebSearchPlan, planner_agent
 from reagents.agents.search_agent import search_agent
 from reagents.agents.writer_agent import ReportData, writer_agent
+from reagents.agents.question_generator_agent import generate_questions, QuestionGeneratorResult
+from reagents.config import QuestionGeneratorConfig, ModelConfig
 from reagents.printer import Printer
 from reagents.error_utils import format_error
 from reagents.persistence import ResearchPersistence
@@ -78,7 +80,41 @@ class ResearchManager:
                     hide_checkmark=True,
                 )
 
-                # Step 1: Plan the searches
+                # Step 1: Generate research questions
+                search_questions = None
+                try:
+                    # Check if we're resuming from a previous session with questions
+                    if self._session_id:
+                        session_data = self.persistence.get_session_data(self._session_id)
+                        if session_data and "search_questions" in session_data:
+                            # Restore questions from saved session
+                            search_questions = session_data["search_questions"]
+                            self.printer.update_item(
+                                "generating_questions",
+                                f"Restored {len(search_questions['questions'])} research questions from previous session",
+                                is_done=True,
+                            )
+
+                    # If no questions were restored, generate new ones
+                    if not search_questions:
+                        question_result = await self._generate_questions(query)
+                        search_questions = question_result.to_dict()
+
+                        # Save the questions if we have a session ID
+                        if self._session_id:
+                            session_data = self.persistence.get_session_data(self._session_id) or {}
+                            session_data["search_questions"] = search_questions
+                            self.persistence.save_session_data(self._session_id, session_data)
+                except Exception as e:
+                    # Log the error but continue with the research process
+                    error_msg = format_error(e, "question generation")
+                    self.printer.update_item(
+                        "warning",
+                        f"Error generating questions: {error_msg}",
+                        is_done=True,
+                    )
+
+                # Step 2: Plan the searches
                 try:
                     # Check if we're resuming from a previous session
                     if self._session_id:
@@ -102,12 +138,24 @@ class ResearchManager:
                             else:
                                 # Create a new search plan
                                 search_plan = await self._plan_searches(query)
+
+                                # Merge questions from search_questions into search_plan if available
+                                if search_questions and "questions" in search_questions and search_questions["questions"]:
+                                    search_plan = self._merge_questions_into_search_plan(search_plan, search_questions)
                         else:
                             # Invalid session, create a new search plan
                             search_plan = await self._plan_searches(query)
+
+                            # Merge questions from search_questions into search_plan if available
+                            if search_questions and "questions" in search_questions and search_questions["questions"]:
+                                search_plan = self._merge_questions_into_search_plan(search_plan, search_questions)
                     else:
                         # No session ID provided, create a new search plan
                         search_plan = await self._plan_searches(query)
+
+                        # Merge questions from search_questions into search_plan if available
+                        if search_questions and "questions" in search_questions and search_questions["questions"]:
+                            search_plan = self._merge_questions_into_search_plan(search_plan, search_questions)
 
                         # Save the search plan and get a new session ID
                         self._session_id = self.persistence.save_search_plan(
@@ -135,21 +183,63 @@ class ResearchManager:
                 try:
                     # Check if we can restore search results from a previous session
                     session_data = self.persistence.get_session_data(self._session_id)
-                    if session_data and session_data.get("status") == "searched" and "search_results" in session_data:
-                        # Restore search results from saved session
-                        search_results = session_data["search_results"]
+                    if session_data and session_data.get("status") == "searched" and "search_plan" in session_data:
+                        # Restore search plan with results from saved session
+                        search_plan = WebSearchPlan.model_validate(session_data["search_plan"])
                         self.printer.update_item(
                             "searching",
-                            f"Restored {len(search_results)} search results from previous session",
+                            f"Restored search results from previous session",
                             is_done=True,
                         )
                     else:
                         # Perform new searches
-                        search_results = await self._perform_searches(search_plan)
+                        search_plan = await self._perform_searches(search_plan)
 
-                        # Save the search results
-                        if self._session_id and search_results:
-                            self.persistence.save_search_results(self._session_id, search_results)
+                        # Update the search_questions with search results
+                        if self._session_id and search_questions:
+                            # Get the current session data
+                            session_data = self.persistence.get_session_data(self._session_id) or {}
+
+                            # Create a new structure for search_questions with results
+                            if "search_questions" in session_data:
+                                # For each question in the search plan, add the search results
+                                for i, search_item in enumerate(search_plan.searches):
+                                    # Find the corresponding question in search_questions
+                                    if i < len(session_data["search_questions"]["questions"]):
+                                        # Add the search results to the question
+                                        if hasattr(search_item, "search_results") and search_item.search_results:
+                                            # If the question is already a dict with results, update it
+                                            if isinstance(session_data["search_questions"]["questions"][i], dict):
+                                                session_data["search_questions"]["questions"][i]["results"] = search_item.search_results
+                                            else:
+                                                # Convert the question from a string to a dict with results
+                                                question_text = session_data["search_questions"]["questions"][i]
+                                                session_data["search_questions"]["questions"][i] = {
+                                                    "question": question_text,
+                                                    "results": search_item.search_results
+                                                }
+                                        else:
+                                            # If no search results, create an empty results array
+                                            if isinstance(session_data["search_questions"]["questions"][i], dict):
+                                                if "results" not in session_data["search_questions"]["questions"][i]:
+                                                    session_data["search_questions"]["questions"][i]["results"] = []
+                                            else:
+                                                # Convert the question from a string to a dict with empty results
+                                                question_text = session_data["search_questions"]["questions"][i]
+                                                session_data["search_questions"]["questions"][i] = {
+                                                    "question": question_text,
+                                                    "results": []
+                                                }
+
+                            # Save the updated session data
+                            session_data["status"] = "searched"
+                            self.persistence.save_session_data(self._session_id, session_data)
+                        else:
+                            # Save the updated search plan (old method)
+                            self.persistence.save_search_plan(query, search_plan.model_dump())
+
+                    # Extract search results from the search plan
+                    search_results = [item.result for item in search_plan.searches if item.result is not None]
 
                     if not search_results:
                         self.printer.update_item(
@@ -157,6 +247,68 @@ class ResearchManager:
                             "No search results were found. The report may be limited.",
                             is_done=True,
                         )
+                    else:
+                        # Step 2.5: Generate additional questions based on search results
+                        if QuestionGeneratorConfig.USE_SEARCH_RESULTS:
+                            try:
+                                self.printer.update_item("generating_questions with query:", query)
+
+                                # Generate additional questions using search results
+                                additional_questions_result = await self._generate_questions(query, search_results)
+
+                                # Merge with existing questions
+                                if search_questions and "questions" in search_questions:
+                                    # Get existing questions
+                                    existing_questions = search_questions["questions"]
+
+                                    # Add new questions
+                                    all_questions = existing_questions + additional_questions_result.questions
+
+                                    # Deduplicate questions
+                                    unique_questions = []
+                                    for q in all_questions:
+                                        if q not in unique_questions:
+                                            unique_questions.append(q)
+
+                                    # Update search_questions
+                                    search_questions["questions"] = unique_questions
+                                    search_questions["count"] = len(unique_questions)
+
+                                    # Save updated questions
+                                    if self._session_id:
+                                        session_data = self.persistence.get_session_data(self._session_id) or {}
+                                        session_data["search_questions"] = search_questions
+                                        self.persistence.save_session_data(self._session_id, session_data)
+
+                                    self.printer.update_item(
+                                        "generating_questions",
+                                        f"Generated {len(additional_questions_result.questions)} additional questions from search results (total: {len(unique_questions)})",
+                                        is_done=True,
+                                    )
+                                else:
+                                    # No existing questions, use the new ones
+                                    search_questions = additional_questions_result.to_dict()
+
+                                    # Save questions
+                                    if self._session_id:
+                                        session_data = self.persistence.get_session_data(self._session_id) or {}
+                                        session_data["search_questions"] = search_questions
+                                        self.persistence.save_session_data(self._session_id, session_data)
+
+                                    self.printer.update_item(
+                                        "generating_questions",
+                                        f"Generated {len(additional_questions_result.questions)} questions from search results",
+                                        is_done=True,
+                                    )
+                            except Exception as e:
+                                # Log the error but continue with the research process
+                                error_msg = format_error(e, "additional question generation")
+                                self.printer.update_item(
+                                    "warning",
+                                 #   f"Error generating additional questions: {error_msg}",
+                                    "query: {query}",
+                                    is_done=True,
+                                )
                 except Exception as e:
                     # Sanitize error message to avoid exposing sensitive information
                     error_type = type(e).__name__
@@ -169,34 +321,17 @@ class ResearchManager:
                     )
                     return
 
-                # Step 3: Write the report
+                # Step 3: Mark the research as completed
                 try:
-                    # Check if we can restore the report from a previous session
-                    session_data = self.persistence.get_session_data(self._session_id)
-                    if session_data and session_data.get("status") == "completed" and "report" in session_data:
-                        # Restore report from saved session
-                        report_dict = session_data["report"]
+                    # Create a simple report with just the summary
+                    report = ReportData(
+                        short_summary=f"Research Results for '{query}'",
+                        model=ModelConfig.get_writer_model()
+                    )
 
-                        # Check if the report has an error message
-                        if "short_summary" in report_dict and "Error" in report_dict["short_summary"]:
-                            # This is an error report, generate a new one instead
-                            print(f"Found error report in saved session, generating a new report")
-                            report = await self._write_report(query, search_results)
-                        else:
-                            # This is a valid report, use it
-                            report = ReportData.model_validate(report_dict)
-                            self.printer.update_item(
-                                "writing",
-                                "Restored report from previous session",
-                                is_done=True,
-                            )
-                    else:
-                        # Generate a new report
-                        report = await self._write_report(query, search_results)
-
-                        # Save the report
-                        if self._session_id:
-                            self.persistence.save_report(self._session_id, report.model_dump())
+                    # Mark the research as completed
+                    if self._session_id:
+                        self.persistence.save_report(self._session_id, report.model_dump())
                 except Exception as e:
                     # Sanitize error message to avoid exposing sensitive information
                     error_type = type(e).__name__
@@ -221,13 +356,9 @@ class ResearchManager:
                         is_done=True,
                     )
 
-                # Print the full report
-                print("\n\n=====REPORT=====\n\n")
-                print(f"Report: {report.markdown_report}")
-
-                print("\n\n=====FOLLOW UP QUESTIONS=====\n\n")
-                follow_up_questions = "\n".join(report.follow_up_questions)
-                print(f"Follow up questions: {follow_up_questions}")
+                # Print the report summary
+                print("\n\n=====REPORT SUMMARY=====\n\n")
+                print(f"Summary: {report.short_summary}")
             except Exception as e:
                 error_msg = format_error(e, "research process")
                 self.printer.update_item(
@@ -235,6 +366,37 @@ class ResearchManager:
                     f"Unexpected error: {error_msg}",
                     is_done=True,
                 )
+
+    async def _generate_questions(self, query: str) -> QuestionGeneratorResult:
+        """
+        Use the question generator agent to create research questions.
+
+        Args:
+            query: The research topic
+
+        Returns:
+            QuestionGeneratorResult containing the generated questions
+        """
+        self.printer.update_item("generating_questions", "Generating research questions...")
+
+        # Generate questions
+        result = await generate_questions(query)
+
+        # Update the printer with the number of questions generated
+        if result.questions:
+            self.printer.update_item(
+                "generating_questions",
+                f"Generated {len(result.questions)} research questions",
+                is_done=True,
+            )
+        else:
+            self.printer.update_item(
+                "warning",
+                "Failed to generate research questions",
+                is_done=True,
+            )
+
+        return result
 
     async def _plan_searches(self, query: str) -> WebSearchPlan:
         """
@@ -281,7 +443,7 @@ class ResearchManager:
             print(f"[{model_name}] Planning error: {error_type}")
             raise e
 
-    async def _perform_searches(self, search_plan: WebSearchPlan) -> list[str]:
+    async def _perform_searches(self, search_plan: WebSearchPlan) -> WebSearchPlan:
         """
         Execute the search plan by running searches in parallel with rate limiting.
 
@@ -289,7 +451,7 @@ class ResearchManager:
             search_plan: The plan containing search queries
 
         Returns:
-            A list of search result summaries
+            The search plan with results populated
         """
         with custom_span("Search the web"):
             self.printer.update_item("searching", "Searching...")
@@ -304,7 +466,7 @@ class ResearchManager:
             # Create a semaphore to limit concurrent searches
             semaphore = asyncio.Semaphore(max_concurrent_searches)
 
-            async def rate_limited_search(item: WebSearchItem) -> str | None:
+            async def rate_limited_search(item: WebSearchItem) -> WebSearchItem:
                 """Execute a search with rate limiting and timeout."""
                 # Add a small delay to prevent API rate limits BEFORE acquiring the semaphore
                 # This prevents blocking other tasks while waiting
@@ -313,18 +475,22 @@ class ResearchManager:
                 async with semaphore:  # Limit concurrent searches
                     try:
                         # Apply timeout to individual search
-                        return await asyncio.wait_for(self._search(item), timeout=search_timeout)
+                        search_result = await asyncio.wait_for(self._search(item), timeout=search_timeout)
+                        # Store the result in the item
+                        item.result = search_result
+                        return item
                     except asyncio.TimeoutError:
                         self.printer.update_item(
                             "warning",
                             f"Search for '{item.query}' timed out after {search_timeout} seconds",
                             is_done=True,
                         )
-                        return f"[Search for '{item.query}' timed out after {search_timeout} seconds]"
+                        # Store the timeout message in the item
+                        item.result = f"[Search for '{item.query}' timed out after {search_timeout} seconds]"
+                        return item
 
             num_completed = 0
             tasks = [asyncio.create_task(rate_limited_search(item)) for item in search_plan.searches]
-            results = []
 
             # Set an overall timeout for all searches
             start_time = time.time()
@@ -345,20 +511,9 @@ class ResearchManager:
                         break
 
                     try:
-                        result = await task
-                        if result is not None:
-                            # Ensure result is a string
-                            if not isinstance(result, str):
-                                error_msg = f"[Search error: sequence item 0: expected str instance, {type(result).__name__} found]"
-                                self.printer.update_item(
-                                    "error",
-                                    f"Error in search result format: {error_msg}",
-                                    is_done=True,
-                                )
-                                # Convert to string representation
-                                results.append(error_msg)
-                            else:
-                                results.append(result)
+                        # The result is the updated WebSearchItem
+                        await task
+                        # No need to do anything with the result as the WebSearchItem is updated in-place
                     except asyncio.CancelledError:
                         # Task was cancelled, just skip it
                         pass
@@ -369,8 +524,8 @@ class ResearchManager:
                             f"Error in search task: {str(e)}",
                             is_done=True,
                         )
-                        # Add error message to results
-                        results.append(error_msg)
+                        # We can't update the WebSearchItem here as we don't know which one failed
+                        # Just log the error
 
                     num_completed += 1
                     self.printer.update_item(
@@ -390,7 +545,7 @@ class ResearchManager:
 
                 self.printer.mark_item_done("searching")
 
-            return results
+            return search_plan
 
     async def _search(self, item: WebSearchItem) -> str:
         """
@@ -401,6 +556,7 @@ class ResearchManager:
 
         Returns:
             A summary of the search results as a string, or an error message if the search failed
+            The item is also updated with the search tool and URLs
         """
         # Limit query length to prevent excessive resource usage
         max_query_length = 200
@@ -422,27 +578,8 @@ class ResearchManager:
             # Truncate the query
             item.query = item.query[:max_query_length]
 
-        # Limit reason length as well
-        max_reason_length = 500
-
-        if len(item.reason) > max_reason_length:
-            original_reason = item.reason
-            truncated_reason = item.reason[:max_reason_length] + "..."
-
-            # Update the printer with a warning
-            self.printer.update_item(
-                "warning",
-                f"Reason truncated due to excessive length",
-                is_done=True,
-            )
-
-            # Log the truncation
-            print(f"WARNING: Reason truncated from {len(original_reason)} to {max_reason_length} characters")
-
-            # Truncate the reason
-            item.reason = truncated_reason
-
-        input = f"Search term: {item.query}\nReason for searching: {item.reason}"
+        # No reason field anymore
+        input = f"Search term: {item.query}"
 
         try:
             # Set a timeout for the search operation
@@ -454,10 +591,22 @@ class ResearchManager:
                     # Use our custom search tool
                     tool_name = custom_search_tool.__class__.__name__
                     print(f"Using {tool_name} for query: {item.query}")
+
+                    # Store the search tool name in the item
+                    item.search_tool = tool_name
+
                     search_task = asyncio.create_task(custom_search_tool.search(item.query))
 
                     # Wait for the task to complete with a timeout
                     result = await asyncio.wait_for(search_task, timeout=timeout_seconds)
+
+                    # Try to extract URLs and detailed search results if available
+                    if hasattr(custom_search_tool, 'last_urls') and custom_search_tool.last_urls:
+                        item.urls = custom_search_tool.last_urls
+
+                    # Store detailed search results if available
+                    if hasattr(custom_search_tool, 'last_search_results') and custom_search_tool.last_search_results:
+                        item.search_results = custom_search_tool.last_search_results
 
                     # Limit the size of the search result to prevent memory issues
                     max_result_length = 5000  # Limit to 5000 characters
@@ -485,6 +634,10 @@ class ResearchManager:
 
             # Fall back to default search agent if custom search is not available or failed
             print(f"Using default search agent for query: {item.query}")
+
+            # Store the search tool name in the item
+            item.search_tool = "DefaultSearchAgent"
+
             search_task = asyncio.create_task(Runner.run(
                 search_agent,
                 input,
@@ -554,13 +707,7 @@ class ResearchManager:
 
             # Create a fallback report with an error message
             fallback_data = {
-                "short_summary": f"ERROR: Failed to generate report for '{query}' (no search results)",
-                "markdown_report": f"# {query.title()}\n\nUnable to generate a report because no search results were available. Please try again with a different query or check your internet connection.\n\n## Technical Details\n\nThe search process did not return any results. This could be due to:\n\n- Network connectivity issues\n- Search API limitations or errors\n- Very specific or niche query with no matching results\n\nPlease try again with a broader or more common query.",
-                "follow_up_questions": [
-                    "Would you like to try a different search query?",
-                    "Are you looking for information on a specific aspect of this topic?",
-                    "Would you like to try a more general search term?"
-                ]
+                "short_summary": f"ERROR: Failed to generate report for '{query}' (no search results)"
             }
             return ReportData.model_validate(fallback_data)
 
@@ -595,13 +742,7 @@ class ResearchManager:
 
             # Create a fallback report with an error message
             fallback_data = {
-                "short_summary": f"ERROR: Failed to generate report for '{query}' (invalid search results)",
-                "markdown_report": f"# {query.title()}\n\nUnable to generate a report because all search results were invalid. Please try again with a different query.\n\n## Technical Details\n\nThe search process returned {len(search_results)} results, but all were invalid (empty, None, or not convertible to string).\n\nPlease try again with a different query.",
-                "follow_up_questions": [
-                    "Would you like to try a different search query?",
-                    "Are you looking for information on a specific aspect of this topic?",
-                    "Would you like to try a more general search term?"
-                ]
+                "short_summary": f"ERROR: Failed to generate report for '{query}' (invalid search results)"
             }
             return ReportData.model_validate(fallback_data)
 
@@ -993,3 +1134,42 @@ class ResearchManager:
             )
             print(f"Error processing report stream: {error_type}")
             raise e
+
+    def _merge_questions_into_search_plan(self, search_plan: WebSearchPlan, search_questions: dict) -> WebSearchPlan:
+        """
+        Merge questions from search_questions into the search plan.
+
+        Args:
+            search_plan: The existing search plan
+            search_questions: The questions generated by the question generator
+
+        Returns:
+            The updated search plan with merged questions
+        """
+        # Get the existing search items from the plan
+        existing_searches = search_plan.searches
+        existing_queries = [item.query.lower() for item in existing_searches]
+
+        # Add questions from search_questions that aren't already in the plan
+        new_searches = []
+        for question in search_questions["questions"]:
+            # Extract the question text if it's a dictionary
+            if isinstance(question, dict) and "question" in question:
+                question_text = question["question"]
+            else:
+                question_text = question
+
+            # Add the question if it's not already in the plan
+            if question_text.lower() not in existing_queries:
+                new_searches.append(WebSearchItem(query=question_text))
+
+        # Combine the searches
+        if new_searches:
+            search_plan.searches.extend(new_searches)
+            self.printer.update_item(
+                "planning",
+                f"Added {len(new_searches)} questions from question generator (total: {len(search_plan.searches)})",
+                is_done=True,
+            )
+
+        return search_plan

@@ -19,7 +19,7 @@ async def test_query_truncation_notification():
 
     # Create a search item with a long query
     long_query = "a" * 300  # 300 characters, which exceeds the 200 character limit
-    search_item = WebSearchItem(query=long_query, reason="test reason")
+    search_item = WebSearchItem(query=long_query)
 
     # Mock the custom_search_tool to avoid making actual API calls
     mock_search_tool = MagicMock()
@@ -43,41 +43,7 @@ async def test_query_truncation_notification():
         # Verify that the search result is as expected
         assert result == "Test search result"
 
-@pytest.mark.asyncio
-async def test_reason_truncation_notification():
-    """Test that reason truncation is properly notified to the user."""
-    # Create a manager instance
-    manager = ResearchManager()
-
-    # Create a mock printer
-    mock_printer = MagicMock()
-    manager.printer = mock_printer
-
-    # Create a search item with a long reason
-    long_reason = "a" * 600  # 600 characters, which exceeds the 500 character limit
-    search_item = WebSearchItem(query="test query", reason=long_reason)
-
-    # Mock the custom_search_tool to avoid making actual API calls
-    mock_search_tool = MagicMock()
-    mock_search_tool.search = AsyncMock(return_value="Test search result")
-
-    # Patch the custom_search_tool
-    with patch('reagents.manager.custom_search_tool', mock_search_tool):
-        # Call the _search method
-        result = await manager._search(search_item)
-
-        # Verify that the printer was updated with a warning
-        mock_printer.update_item.assert_any_call(
-            "warning",
-            "Reason truncated due to excessive length",
-            is_done=True,
-        )
-
-        # Verify that the reason was truncated
-        assert len(search_item.reason) == 503  # 500 + 3 for "..."
-
-        # Verify that the search result is as expected
-        assert result == "Test search result"
+# Removed test_reason_truncation_notification as we no longer have a reason field
 
 @pytest.mark.asyncio
 async def test_search_result_truncation_notification():
@@ -90,7 +56,7 @@ async def test_search_result_truncation_notification():
     manager.printer = mock_printer
 
     # Create a search item
-    search_item = WebSearchItem(query="test query", reason="test reason")
+    search_item = WebSearchItem(query="test query")
 
     # Create a mock for the custom_search_tool
     mock_search_tool = MagicMock()

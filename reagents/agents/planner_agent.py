@@ -1,34 +1,109 @@
 from pydantic import BaseModel, Field
 import json
 import re
+from typing import Optional, List
 
 from agents import Agent
 
 # Define the model to use
 PLANNER_MODEL = "gpt-3.5-turbo"  # Using GPT-3.5-turbo for compatibility
 
-# Instructions for the planner agent
-PROMPT = (
-    "You are a helpful research assistant. Given a query, come up with a set of web searches "
-    "to perform to best answer the query. Output between 5 and 10 terms to query for. "
-    "Make sure the search terms are diverse and cover different aspects of the query. "
-    "For each search term, provide a clear reason why this search is important.\n\n"
-    "IMPORTANT: Your response must be in the following JSON format:\n"
-    "```json\n"
-    "{\"searches\": [{\"query\": \"search term 1\", \"reason\": \"reason for search 1\"}, "
-    "{\"query\": \"search term 2\", \"reason\": \"reason for search 2\"}]}\n"
-    "```\n"
-    "Ensure your response can be parsed as valid JSON."
-)
+def load_prompt_template() -> str:
+    """Load the question generation prompt template from file.
+
+    Returns:
+        The prompt template as a string with modified JSON format instructions
+    """
+    try:
+        with open("prompts/question_generation_prompt.txt", "r", encoding="utf-8") as f:
+            prompt_content = f.read()
+
+            # Modify the prompt to generate 40-50 questions
+            prompt_content = prompt_content.replace("{min_questions}-{max_questions}", "40-50")
+
+            # Replace the JSON format instructions to use searches format without reason field
+            if "Format your response as a JSON array of questions" in prompt_content:
+                prompt_content = prompt_content.replace(
+                    "Format your response as a JSON array of questions. Each question should be clear, focused, and end with a question mark.",
+                    "IMPORTANT: Your response must be in the following JSON format:"
+                )
+
+                # Replace the example format section
+                start_idx = prompt_content.find("Example format:")
+                end_idx = prompt_content.find("If you cannot format as JSON")
+                if start_idx != -1 and end_idx != -1:
+                    example_section = prompt_content[start_idx:end_idx]
+                    new_example_section = (
+                        "Example format:\n"
+                        "```json\n"
+                        "{\"searches\": [\n"
+                        "  \"What is [topic] and how is it defined in different contexts?\",\n"
+                        "  \"How has [topic] evolved historically?\",\n"
+                        "  \"What are the current trends in [topic]?\"\n"
+                        "]}\n"
+                        "```\n\n"
+                    )
+                    prompt_content = prompt_content.replace(example_section, new_example_section)
+            else:
+                # If we can't find the format section, append our instructions
+                json_format_instructions = (
+                    "\n\nIMPORTANT: Your response must be in the following JSON format:\n"
+                    "```json\n"
+                    "{\"searches\": [\"Question 1?\", \"Question 2?\", \"Question 3?\"]}\n"
+                    "```\n"
+                    "Ensure your response can be parsed as valid JSON."
+                )
+                prompt_content += json_format_instructions
+
+            return prompt_content
+    except FileNotFoundError:
+        print("Question generation prompt template not found, using default")
+        # Default prompt with JSON format instructions
+        return (
+            "You are a research question generator. Your task is to generate 40-50 diverse and insightful research questions about the given topic.\n\n"
+            "Topic: {topic}\n\n"
+            "Generate questions that cover various aspects of the topic, including:\n"
+            "1. Definitions and basic concepts\n"
+            "2. Historical context and development\n"
+            "3. Current state and trends\n"
+            "4. Future prospects and challenges\n"
+            "5. Comparative analysis with related topics\n"
+            "6. Methodological approaches\n"
+            "7. Controversies and debates\n"
+            "8. Practical applications and implications\n"
+            "9. Ethical considerations\n"
+            "10. Economic and social impacts\n\n"
+            "IMPORTANT: Your response must be in the following JSON format:\n"
+            "```json\n"
+            "{\"searches\": [\"Question 1?\", \"Question 2?\", \"Question 3?\"]}\n"
+            "```\n"
+            "Ensure your response can be parsed as valid JSON."
+        )
+
+# Load the planner prompt
+PLANNER_PROMPT = load_prompt_template()
 
 class WebSearchItem(BaseModel):
-    """Represents a single search query with its rationale."""
+    """Represents a single search query and its results."""
 
-    reason: str = Field(
-        description="Your reasoning for why this search is important to the query."
-    )
     query: str = Field(
-        description="The search term to use for the web search."
+        description="The search question to use for the web search."
+    )
+    search_tool: Optional[str] = Field(
+        None,
+        description="The search tool used for this query."
+    )
+    urls: Optional[list[str]] = Field(
+        None,
+        description="The URLs returned by the search."
+    )
+    result: Optional[str] = Field(
+        None,
+        description="The search result text."
+    )
+    search_results: Optional[list[dict]] = Field(
+        None,
+        description="The detailed search results including title, URL, and description."
     )
 
 class WebSearchPlan(BaseModel):
@@ -78,73 +153,56 @@ class WebSearchPlan(BaseModel):
             if not isinstance(data['searches'], list):
                 raise ValueError("'searches' must be a list")
 
-            # Validate each search item
+            # Convert the list of strings to a list of WebSearchItem objects
+            search_items = []
             for i, item in enumerate(data['searches']):
-                if not isinstance(item, dict):
-                    raise ValueError(f"Search item {i} must be an object")
-                if 'query' not in item:
-                    raise ValueError(f"Search item {i} missing required field: 'query'")
-                if 'reason' not in item:
-                    raise ValueError(f"Search item {i} missing required field: 'reason'")
-                if not isinstance(item['query'], str):
-                    raise ValueError(f"Search item {i}: 'query' must be a string")
-                if not isinstance(item['reason'], str):
-                    raise ValueError(f"Search item {i}: 'reason' must be a string")
+                if isinstance(item, str):
+                    # If the item is a string, create a WebSearchItem with just the query
+                    search_items.append({"query": item})
+                elif isinstance(item, dict) and 'query' in item:
+                    # If the item is a dict with a query field, use it directly
+                    # (this handles backward compatibility with the old format)
+                    search_items.append({"query": item['query']})
+                else:
+                    raise ValueError(f"Search item {i} must be a string or an object with a 'query' field")
 
-            return cls.model_validate(data)
+            # Create a new data object with the converted search items
+            converted_data = {
+                'searches': search_items
+            }
+
+            return cls.model_validate(converted_data)
         except Exception as e:
-            # Create a fallback plan that preserves the original query intent
+            # Create a fallback plan with basic research questions
             fallback_data = {
                 'searches': []
             }
 
-            # Always include the original query as the first search item if available
+            # Add some basic research questions based on the original query
             if original_query:
-                fallback_data['searches'].append({
-                    'query': original_query,
-                    'reason': 'Direct search using the original query'
-                })
-
-                # Add variations of the original query
-                words = original_query.split()
-                if len(words) > 3:  # If query has more than 3 words, use the first 3 for a more focused search
-                    fallback_data['searches'].append({
-                        'query': " ".join(words[:3]) + " guide",
-                        'reason': 'Find guides related to the main topic'
-                    })
-
-                # Add a search for the latest information, but avoid redundancy
-                if not "latest" in original_query.lower():
-                    fallback_data['searches'].append({
-                        'query': original_query + " latest research",
-                        'reason': 'Get up-to-date information on the topic'
-                    })
-                else:
-                    fallback_data['searches'].append({
-                        'query': original_query + " current developments",
-                        'reason': 'Get up-to-date information on the topic'
-                    })
-
-                # Add a search for expert analysis
-                fallback_data['searches'].append({
-                    'query': original_query + " expert analysis",
-                    'reason': 'Get professional insights on the topic'
-                })
+                # Create 5 basic research questions
+                fallback_data['searches'] = [
+                    {"query": f"What is {original_query}?"},
+                    {"query": f"How has {original_query} evolved over time?"},
+                    {"query": f"What are the current applications of {original_query}?"},
+                    {"query": f"What are the future prospects for {original_query}?"},
+                    {"query": f"What are the challenges related to {original_query}?"}
+                ]
             else:
-                # If no original query is available, use generic fallback searches
-                fallback_data['searches'].extend([
-                    {
-                        'query': 'error in search plan generation',
-                        'reason': f"Error parsing search plan: {str(e)}"
-                    },
-                    {
-                        'query': 'basic research methodology',
-                        'reason': 'Fallback search to provide some useful information'
-                    }
-                ])
+                # If no original query is available, use generic fallback questions
+                fallback_data['searches'] = [
+                    {"query": "What is the definition of this topic?"},
+                    {"query": "What is the historical development of this field?"},
+                    {"query": "What are the current trends in this area?"},
+                    {"query": "What are the future prospects for this topic?"},
+                    {"query": "What are the main challenges in this field?"}
+                ]
 
-            print(f"Error parsing search plan JSON: {str(e)}\nFalling back to query-based search plan.")
+            print(f"Error parsing search plan JSON: {str(e)}\nFalling back to basic research questions.")
             return cls.model_validate(fallback_data)
+
+
+
 
     @staticmethod
     def _attempt_json_repair(json_str: str) -> str:
@@ -166,6 +224,9 @@ class WebSearchPlan(BaseModel):
 # Create the planner agent with a valid model name
 planner_agent = Agent(
     name="PlannerAgent",
-    instructions=PROMPT,
+    instructions=PLANNER_PROMPT,
     model=PLANNER_MODEL
 )
+
+# We no longer need a separate question planner agent
+# The planner_agent now handles both search planning and question generation

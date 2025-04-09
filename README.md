@@ -8,7 +8,8 @@ A Python-based research agent built using the OpenAI Agent SDK. This agent helps
 
 ## Features
 
-- Multi-agent architecture with specialized agents for planning, searching, and writing
+- Multi-agent architecture with specialized agents for question generation, planning, searching, and writing
+- Research question generation to enhance research quality
 - Parallel execution of search queries for faster results
 - Rich terminal output with progress indicators
 - Detailed markdown reports with follow-up questions
@@ -66,12 +67,14 @@ This will display a menu with the following options:
 2. List all research sessions
 3. Start a new research session
 4. Resume a specific session
-5. Exit
+5. Generate research questions only
+6. Exit
 
 When starting a new session, you will be prompted to enter a research topic. The agent will then:
-1. Plan the research by generating search queries
-2. Execute those searches
-3. Synthesize the results into a comprehensive report
+1. Generate research questions to explore different aspects of the topic
+2. Plan the research by generating search queries
+3. Execute those searches
+4. Synthesize the results into a comprehensive report
 
 After completing a session, you can continue working with the same session or start a new one.
 
@@ -88,15 +91,19 @@ python main.py -r SESSION_ID
 
 # Start a new research session
 python main.py -n
+
+# Generate research questions only
+python main.py -q
 ```
 
 ## Architecture
 
-The research agent consists of three specialized agents:
+The research agent consists of four specialized agents:
 
-1. **Planner Agent**: Creates a plan of search queries based on the research topic
-2. **Search Agent**: Executes web searches and summarizes the results
-3. **Writer Agent**: Synthesizes the search results into a comprehensive report
+1. **Question Generator Agent**: Generates diverse research questions to explore different aspects of the topic
+2. **Planner Agent**: Creates a plan of search queries based on the research topic
+3. **Search Agent**: Executes web searches and summarizes the results
+4. **Writer Agent**: Synthesizes the search results into a comprehensive report
 
 These agents are orchestrated by the `ResearchManager` class, which handles the flow of information between them.
 
@@ -106,6 +113,7 @@ These agents are orchestrated by the `ResearchManager` class, which handles the 
 .
 ├── reagents/            # Main application code
 │   ├── agents/           # Agent implementations
+│   │   ├── question_generator_agent.py
 │   │   ├── planner_agent.py
 │   │   ├── search_agent.py
 │   │   └── writer_agent.py             # Writer agent implementation
@@ -119,6 +127,11 @@ These agents are orchestrated by the `ResearchManager` class, which handles the 
 │   └── agents/          # Previous agent implementations
 ├── utils/               # Utility scripts
 │   └── repair_session_files.py  # Tool for fixing corrupted session files
+├── prompts/             # Prompt templates
+│   ├── question_generation_prompt.txt
+│   ├── planner_prompt.txt
+│   ├── search_prompt.txt
+│   └── writer_prompt.txt
 ├── tests/               # Test suite
 ├── main.py              # Application entry point
 ├── requirements.txt     # Project dependencies

@@ -6,7 +6,8 @@ import logging
 import aiohttp
 from typing import Dict, Any, List, Optional, Tuple
 
-from reagents.config import AppConstants
+# Import configuration
+from reagents.config import QuestionGeneratorConfig
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -24,6 +25,8 @@ class BaseSearchTool:
         self.api_key = api_key
         self.api_name = api_name
         self.endpoint = ""  # To be set by subclasses
+        self.last_urls = []  # Store the URLs from the last search
+        self.last_search_results = []  # Store detailed search results from the last search
 
     def _validate_api_key(self, min_length: int = 20, prefix: Optional[str] = None,
                          check_alphanumeric: bool = True) -> None:
@@ -72,7 +75,8 @@ class BaseSearchTool:
             logger.info(f"Performing {self.api_name} search for: {query}")
             # Also log to console for better visibility
             print(f"Performing {self.api_name} search for: {query}")
-            session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=AppConstants.API_TIMEOUT_SECONDS))
+            # Use a default timeout of 30 seconds
+            session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30))
             async with session.post(endpoint, headers=headers, json=params) as response:
                 if response.status != 200:
                     error_text = await response.text()
