@@ -31,6 +31,45 @@ class SerperSearchTool(BaseSearchTool):
         if self.api_key:
             self._validate_api_key()
 
+    async def check_credits(self) -> Dict[str, Any]:
+        """Check the available credits for Serper API.
+
+        Returns:
+            A dictionary containing credit information or error details
+        """
+        if not self.api_key:
+            return {"error": "No API key provided", "status": "error"}
+
+        # Serper API endpoint for account information
+        account_endpoint = "https://google.serper.dev/account"
+
+        # Set up headers with API key
+        headers = {
+            "X-API-KEY": self.api_key,
+            "Content-Type": "application/json"
+        }
+
+        try:
+            # Use aiohttp to make the request
+            async with aiohttp.ClientSession() as session:
+                async with session.get(account_endpoint, headers=headers) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"Serper API account check error: {response.status} - {error_text}")
+                        return {"error": f"API returned status {response.status}", "status": "error"}
+
+                    # Parse the response
+                    data = await response.json()
+
+                    # Extract credit information
+                    if "credit" in data:
+                        return {"credit": data["credit"], "status": "ok"}
+                    else:
+                        return {"error": "Credit information not found in response", "status": "error"}
+        except Exception as e:
+            logger.error(f"Error checking Serper API credits: {str(e)}")
+            return {"error": str(e), "status": "error"}
+
     async def search(self, query: str, num_results: int = AppConstants.MAX_SEARCH_RESULTS) -> str:
         """Perform a search using the Serper API.
 
@@ -203,6 +242,45 @@ class TavilySearchTool(BaseSearchTool):
         # Validate API key format
         if self.api_key:
             self._validate_api_key(min_length=20, prefix="tvly-", check_alphanumeric=True)
+
+    async def check_credits(self) -> Dict[str, Any]:
+        """Check the available credits for Tavily API.
+
+        Returns:
+            A dictionary containing credit information or error details
+        """
+        if not self.api_key:
+            return {"error": "No API key provided", "status": "error"}
+
+        # Tavily API endpoint for account information
+        account_endpoint = "https://api.tavily.com/account"
+
+        # Set up headers with API key
+        headers = {
+            "Content-Type": "application/json",
+            "X-API-Key": self.api_key
+        }
+
+        try:
+            # Use aiohttp to make the request
+            async with aiohttp.ClientSession() as session:
+                async with session.get(account_endpoint, headers=headers) as response:
+                    if response.status != 200:
+                        error_text = await response.text()
+                        logger.error(f"Tavily API account check error: {response.status} - {error_text}")
+                        return {"error": f"API returned status {response.status}", "status": "error"}
+
+                    # Parse the response
+                    data = await response.json()
+
+                    # Extract credit information
+                    if "credits_remaining" in data:
+                        return {"credits_remaining": data["credits_remaining"], "status": "ok"}
+                    else:
+                        return {"error": "Credit information not found in response", "status": "error"}
+        except Exception as e:
+            logger.error(f"Error checking Tavily API credits: {str(e)}")
+            return {"error": str(e), "status": "error"}
 
     async def search(self, query: str, search_depth: str = AppConstants.MAX_SEARCH_DEPTH, max_results: int = AppConstants.MAX_SEARCH_RESULTS) -> str:
         """Perform a search using the Tavily API.
@@ -457,7 +535,7 @@ class DuckDuckGoSearchTool(BaseSearchTool):
 
 
 # Factory function to get the appropriate search tool based on configuration
-def get_search_tool():
+async def get_search_tool():
     """Get the best available search tool based on configuration.
 
     The function uses a JSON configuration to determine which search tool to use.
@@ -471,38 +549,64 @@ def get_search_tool():
     Returns:
         BaseSearchTool: The selected search tool instance
     """
+    import datetime
+
     # Define the search tools configuration
-    # Note: This configuration is not currently used but is defined for future implementation
-    _ = [
+    search_tools_config = [
         {
-            "search_tool_name": "Serper",
+            "search_tool_name": "SerperSearchTool",
             "priority": 1,  # Highest priority
             "is_enabled": True,
             "is_blocked": False,
-            "next_check_datetime": None
+            "next_check_datetime": None,
+            "class_name": SerperSearchTool
         },
         {
-            "search_tool_name": "Tavily",
+            "search_tool_name": "TavilySearchTool",
             "priority": 2,  # Medium priority
             "is_enabled": True,
-            "is_blocked": False,
-            "next_check_datetime": None
+            "is_blocked": True,
+            "next_check_datetime": None,
+            "class_name": TavilySearchTool
         },
-         {
-            "search_tool_name": "DuckDuckGo",
+        {
+            "search_tool_name": "DuckDuckGoSearchTool",
             "priority": 3,  # Lowest priority but doesn't require API key
             "is_enabled": True,
-            "is_blocked": False,
-            "next_check_datetime": None
+            "is_blocked": True,
+            "next_check_datetime": None,
+            "class_name": DuckDuckGoSearchTool
         }
-   ]
+    ]
 
-    # The configuration is defined above but not used yet
-    # For now, just use DuckDuckGo as the default search tool
-    logger.info("Using DuckDuckGo search tool as default")
-    return DuckDuckGoSearchTool()
+    # Current time for setting next_check_datetime if needed
+    now = datetime.datetime.now()
 
-    # NOTE: The following code is commented out and would implement the selection logic
-    # based on the configuration, but is not being used as requested
+    # While there are tools that are enabled and not blocked
+    while any(tool["is_enabled"] and not tool["is_blocked"] for tool in search_tools_config):
+        # Identify the lowest priority search tool that is enabled and not blocked
+        try:
+            next_tool = min(
+                (tool for tool in search_tools_config if tool["is_enabled"] and not tool["is_blocked"]),
+                key=lambda t: t["priority"])
+        except ValueError:
+            # No tools available
+            return None
 
-    # The selection logic would go here, but is not implemented yet
+        # Create an instance of the search tool
+        search_tool_class = next_tool["class_name"]
+        search_tool = search_tool_class()
+
+        # Test if the tool is available
+        credits_info = await search_tool.check_credits()
+
+        if credits_info.get("status") == "ok":
+            # Tool is available, return it
+            return search_tool
+        else:
+            # Tool is not available, mark as blocked
+            next_tool["is_blocked"] = True
+            next_tool["next_check_datetime"] = now + datetime.timedelta(hours=6)
+
+    # If we get here, all tools are either disabled or blocked
+    return None

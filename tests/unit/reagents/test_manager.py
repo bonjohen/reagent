@@ -95,7 +95,7 @@ class TestResearchManager:
 
                 # Check that the persistence methods were called
                 mock_persistence.save_search_plan.assert_called_once()
-                mock_persistence.save_search_results.assert_called_once()
+                mock_persistence.update_search_plan.assert_called_once()
                 mock_persistence.save_report.assert_called_once()
 
     @pytest.mark.asyncio
@@ -145,7 +145,7 @@ class TestResearchManager:
 
                 # Check that the persistence methods were called
                 mock_persistence.get_session_data.assert_called_once_with("test_session")
-                mock_persistence.save_search_results.assert_called_once()
+                mock_persistence.update_search_plan.assert_called_once()
                 mock_persistence.save_report.assert_called_once()
 
     @pytest.mark.asyncio

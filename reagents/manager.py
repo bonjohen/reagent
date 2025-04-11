@@ -19,15 +19,8 @@ from reagents.error_utils import format_error
 from reagents.persistence import ResearchPersistence
 from contextlib import nullcontext
 
-# Import custom search tools
-try:
-    from reagents.tools.search_tools import get_search_tool
-    # Use the get_search_tool function to get the appropriate search tool
-    custom_search_tool = get_search_tool()
-    print(f"Using custom search tool: {custom_search_tool.__class__.__name__ if custom_search_tool else 'None'}")
-except ImportError:
-    print("Custom search tools not available, falling back to default search")
-    custom_search_tool = None
+# Custom search tool will be initialized in the run method
+custom_search_tool = None
 
 class ResearchManager:
     """
@@ -42,6 +35,7 @@ class ResearchManager:
         self.printer = Printer(self.console)
         self.persistence = ResearchPersistence()
         self._session_id = session_id
+        self.custom_search_tool = None
 
     @property
     def session_id(self) -> Optional[str]:
@@ -63,6 +57,18 @@ class ResearchManager:
         Returns:
             None
         """
+        # Initialize the custom search tool if it's not already initialized
+        if self.custom_search_tool is None:
+            try:
+                # Import here to avoid circular imports
+                from reagents.tools.search_tools import get_search_tool
+                # Use the get_search_tool function to get the appropriate search tool
+                self.custom_search_tool = await get_search_tool()
+                print(f"Using custom search tool: {self.custom_search_tool.__class__.__name__ if self.custom_search_tool else 'None'}")
+            except Exception as e:
+                print(f"Error initializing custom search tool: {str(e)}. Falling back to default search.")
+                self.custom_search_tool = None
+
         # Determine whether to use tracing based on configuration
         use_tracing = AppConstants.ENABLE_TRACING
 
@@ -188,10 +194,11 @@ class ResearchManager:
                                     session_data["search_questions"]["count"] = len(session_data["search_questions"]["questions"])
                                     self.persistence.save_session_data(self._session_id, session_data)
 
-                        # Save the search plan and get a new session ID
+                        # Save the search plan and search questions, and get a new session ID
                         self._session_id = self.persistence.save_search_plan(
                             query,
-                            search_plan.model_dump()
+                            search_plan.model_dump(),
+                            search_questions
                         )
                         self.printer.update_item(
                             "session",
@@ -270,8 +277,27 @@ class ResearchManager:
                             session_data["status"] = "searched"
                             self.persistence.save_session_data(self._session_id, session_data)
                         else:
-                            # Save the updated search plan (old method)
-                            self.persistence.save_search_plan(query, search_plan.model_dump())
+                            # Update search_questions with search results before saving
+                            if search_questions and "questions" in search_questions:
+                                # For each question in the search plan, add the search results
+                                for i, search_item in enumerate(search_plan.searches):
+                                    # Find the corresponding question in search_questions
+                                    if i < len(search_questions["questions"]):
+                                        # Add the search results to the question
+                                        if hasattr(search_item, "search_results") and search_item.search_results:
+                                            # If the question is already a dict with results, update it
+                                            if isinstance(search_questions["questions"][i], dict):
+                                                search_questions["questions"][i]["results"] = search_item.search_results
+                                            else:
+                                                # Convert the question from a string to a dict with results
+                                                question_text = search_questions["questions"][i]
+                                                search_questions["questions"][i] = {
+                                                    "question": question_text,
+                                                    "results": search_item.search_results
+                                                }
+
+                            # Save the updated search plan
+                            self.persistence.update_search_plan(self._session_id, search_plan.model_dump(), search_questions)
 
                     # Extract search results from the search plan
                     search_results = [item.result for item in search_plan.searches if item.result is not None]
@@ -545,21 +571,21 @@ class ResearchManager:
 
             # Debug logging
             print(f"DEBUG: Starting search process with {len(search_plan.searches)} queries")
-            print(f"DEBUG: Search tool: {custom_search_tool.__class__.__name__ if custom_search_tool else 'None'}")
+            print(f"DEBUG: Search tool: {self.custom_search_tool.__class__.__name__ if self.custom_search_tool else 'None'}")
 
             # Check available credits if using Serper or Tavily
-            if custom_search_tool:
+            if self.custom_search_tool:
                 try:
                     # Check available credits
-                    if custom_search_tool.__class__.__name__ == "SerperSearchTool":
-                        account_info = await custom_search_tool.check_credits()
+                    if self.custom_search_tool.__class__.__name__ == "SerperSearchTool":
+                        account_info = await self.custom_search_tool.check_credits()
                         if "error" in account_info:
                             print(f"WARNING: Could not check Serper API credits: {account_info['error']}")
                         elif "credit" in account_info and account_info["credit"] < len(search_plan.searches):
                             print(f"\nWARNING: Serper API has only {account_info['credit']} credits remaining, but {len(search_plan.searches)} searches are planned.")
                             print(f"Some searches may fail due to insufficient credits.")
-                    elif custom_search_tool.__class__.__name__ == "TavilySearchTool":
-                        account_info = await custom_search_tool.check_credits()
+                    elif self.custom_search_tool.__class__.__name__ == "TavilySearchTool":
+                        account_info = await self.custom_search_tool.check_credits()
                         if "error" in account_info:
                             print(f"WARNING: Could not check Tavily API credits: {account_info['error']}")
                         elif "credits_remaining" in account_info and account_info["credits_remaining"] < len(search_plan.searches):
@@ -604,7 +630,7 @@ class ResearchManager:
 
             for item in search_plan.searches:
                 # If we've already processed the first item and encountered an error, skip all remaining items
-                if first_item_processed and custom_search_tool and hasattr(custom_search_tool, 'has_error') and custom_search_tool.has_error():
+                if first_item_processed and self.custom_search_tool and hasattr(self.custom_search_tool, 'has_error') and self.custom_search_tool.has_error():
                     print(f"Skipping search for '{item.query}' because search tool is in error state")
                     # Add a placeholder result for this item
                     item.search_results = [{
@@ -726,26 +752,26 @@ class ResearchManager:
             timeout_seconds = AppConstants.SEARCH_TIMEOUT_SECONDS
 
             # Try using custom search tools first if available
-            if custom_search_tool:
+            if self.custom_search_tool:
                 try:
                     # Use our custom search tool
-                    tool_name = custom_search_tool.__class__.__name__
+                    tool_name = self.custom_search_tool.__class__.__name__
 
                     # Store the search tool name in the item without printing
                     item.search_tool = tool_name
 
-                    search_task = asyncio.create_task(custom_search_tool.search(item.query))
+                    search_task = asyncio.create_task(self.custom_search_tool.search(item.query))
 
                     # Wait for the task to complete with a timeout
                     result = await asyncio.wait_for(search_task, timeout=timeout_seconds)
 
                     # Try to extract URLs and detailed search results if available
-                    if hasattr(custom_search_tool, 'last_urls') and custom_search_tool.last_urls:
-                        item.urls = custom_search_tool.last_urls
+                    if hasattr(self.custom_search_tool, 'last_urls') and self.custom_search_tool.last_urls:
+                        item.urls = self.custom_search_tool.last_urls
 
                     # Store detailed search results if available
-                    if hasattr(custom_search_tool, 'last_search_results') and custom_search_tool.last_search_results:
-                        item.search_results = custom_search_tool.last_search_results
+                    if hasattr(self.custom_search_tool, 'last_search_results') and self.custom_search_tool.last_search_results:
+                        item.search_results = self.custom_search_tool.last_search_results
 
                     # Check if the result contains an error message
                     if result and result.startswith('[ERROR:'):
@@ -761,8 +787,8 @@ class ResearchManager:
 
                         # Set a flag in the search tool to indicate that we've encountered an error
                         # This will be checked in _perform_searches to stop further searches
-                        if hasattr(custom_search_tool, 'set_error_state'):
-                            custom_search_tool.set_error_state(True)
+                        if hasattr(self.custom_search_tool, 'set_error_state'):
+                            self.custom_search_tool.set_error_state(True)
 
                     # Limit the size of the search result to prevent memory issues
                     max_result_length = 5000  # Limit to 5000 characters

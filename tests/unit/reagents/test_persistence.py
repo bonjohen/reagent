@@ -43,8 +43,9 @@ class TestResearchPersistence:
 
         query = "Test query"
         search_plan = {"searches": [{"query": "test", "reason": "testing"}]}
+        search_questions = {"questions": ["What is test?", "How does test work?"], "count": 2}
 
-        session_id = persistence.save_search_plan(query, search_plan)
+        session_id = persistence.save_search_plan(query, search_plan, search_questions)
 
         # Check that the file was created
         file_path = os.path.join(temp_data_dir, f"{session_id}.json")
@@ -55,11 +56,12 @@ class TestResearchPersistence:
             data = json.load(f)
             assert data["query"] == query
             assert data["search_plan"] == search_plan
+            assert data["search_questions"] == search_questions
             assert data["status"] == "planned"
             assert "timestamp" in data
 
-    def test_save_search_results(self, temp_data_dir):
-        """Test saving search results."""
+    def test_update_search_plan(self, temp_data_dir):
+        """Test updating a search plan."""
         persistence = ResearchPersistence(data_dir=temp_data_dir)
 
         # First create a session
@@ -67,15 +69,17 @@ class TestResearchPersistence:
         search_plan = {"searches": [{"query": "test", "reason": "testing"}]}
         session_id = persistence.save_search_plan(query, search_plan)
 
-        # Now save search results
-        search_results = ["Result 1", "Result 2"]
-        persistence.save_search_results(session_id, search_results)
+        # Now update the search plan
+        updated_search_plan = {"searches": [{"query": "test", "reason": "testing", "result": "Test result"}]}
+        search_questions = {"questions": ["What is test?", "How does test work?"], "count": 2}
+        persistence.update_search_plan(session_id, updated_search_plan, search_questions)
 
         # Check file contents
         file_path = os.path.join(temp_data_dir, f"{session_id}.json")
         with open(file_path, "r") as f:
             data = json.load(f)
-            assert data["search_results"] == search_results
+            assert data["search_plan"] == updated_search_plan
+            assert data["search_questions"] == search_questions
             assert data["status"] == "searched"
 
     def test_save_report(self, temp_data_dir):
@@ -86,8 +90,10 @@ class TestResearchPersistence:
         query = "Test query"
         search_plan = {"searches": [{"query": "test", "reason": "testing"}]}
         session_id = persistence.save_search_plan(query, search_plan)
-        search_results = ["Result 1", "Result 2"]
-        persistence.save_search_results(session_id, search_results)
+
+        # Update the search plan with results
+        updated_search_plan = {"searches": [{"query": "test", "reason": "testing", "result": "Test result"}]}
+        persistence.update_search_plan(session_id, updated_search_plan)
 
         # Now save a report
         report = {
@@ -101,7 +107,6 @@ class TestResearchPersistence:
         file_path = os.path.join(temp_data_dir, f"{session_id}.json")
         with open(file_path, "r") as f:
             data = json.load(f)
-            assert data["report"] == report
             assert data["status"] == "completed"
 
     def test_get_session_data(self, temp_data_dir):

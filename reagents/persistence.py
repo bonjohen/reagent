@@ -28,13 +28,14 @@ class ResearchPersistence:
         self.data_dir = data_dir
         os.makedirs(data_dir, exist_ok=True)
 
-    def save_search_plan(self, query: str, search_plan: Dict[str, Any]) -> str:
+    def save_search_plan(self, query: str, search_plan: Dict[str, Any], search_questions: Optional[Dict[str, Any]] = None) -> str:
         """
         Save a search plan to disk.
 
         Args:
             query: The research query
             search_plan: The search plan data
+            search_questions: Optional search questions data
 
         Returns:
             The ID of the saved research session
@@ -46,6 +47,10 @@ class ResearchPersistence:
             "search_plan": search_plan,
             "status": "planned"
         }
+
+        # Add search_questions to the data if provided
+        if search_questions:
+            data["search_questions"] = search_questions
 
         self._save_session_data(session_id, data)
         return session_id
@@ -63,18 +68,24 @@ class ResearchPersistence:
         # but it doesn't do anything anymore
         pass
 
-    def save_search_plan(self, session_id: str, search_plan: Dict[str, Any]) -> None:
+    def update_search_plan(self, session_id: str, search_plan: Dict[str, Any], search_questions: Optional[Dict[str, Any]] = None) -> None:
         """
-        Save the search plan with results to disk.
+        Update the search plan with results to disk.
 
         Args:
             session_id: The research session ID
             search_plan: The search plan with results
+            search_questions: Optional search questions data
         """
         data = self._load_session_data(session_id)
         if data:
             data["search_plan"] = search_plan
             data["status"] = "searched"
+
+            # Add search_questions to the data if provided
+            if search_questions:
+                data["search_questions"] = search_questions
+
             self._save_session_data(session_id, data)
 
     def save_report(self, session_id: str, report_data: Dict[str, Any]) -> None:
